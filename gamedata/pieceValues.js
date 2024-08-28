@@ -105,7 +105,15 @@ let squaresControlled = function(chess) {
 	return ret;
 }
 
+/*
+	returns array of objects for each move:
+	 [	{ r: 2, n: 3, b: 2, q: 5 },
+  		{ r: 2, n: 3, b: 2, q: 5 },
+  		...
+  	]
 
+  	where the object at index N is a map from piece to # of squares controlled by that piece at that move
+*/
 let evaluatePieces = function(moves) {
 	const chess = new Chess();
 	const ret = [];
@@ -117,6 +125,81 @@ let evaluatePieces = function(moves) {
 	return ret;
 }
 
+/*
+	averages and results are both objects which map piece to count of squares controlled:
+	e.g. { r: 2, n: 3, b: 2, q: 5 }
+*/
+let updateAverage = function(averages, results, gamecount) {
+	//console.log("averages", averages);
+	//console.log("update", results);
+	Object.keys(results).forEach(function(piece) {
+		if (!(piece in averages)){
+			averages[piece] = 0;
+		}
+
+		if (results[piece] < 1) {
+			results[piece] = average[piece];
+		}
+		
+		//console.log("avg[piece]", averages[piece], "gamecount", gamecount, "results[piece]", results[piece]);
+		averages[piece] = Math.round(10*(averages[piece] * gamecount + results[piece])/(gamecount + 1))/10;
+	})
+	//console.log("averages", averages);
+}
+
+/*
+	We determine the 'average number of squares controlled' for each piece for every move of every game.
+
+	returns: array of objects for each move e.g.
+	[
+		{ r: 2, n: 3, b: 2, q: 5 },
+		{ r: 2, n: 3, b: 2, q: 5 },
+		{ r: 2, n: 3, b: 2, q: 5 }, // value for each piece for the second move averaged over every game
+		...
+	]
+
+*/
+let processGames = function(games) {
+	const gameids = Object.keys(games);
+	const averages = [];
+	for (let i=0; i<10000; i++) {
+		const moves = parseMoves(games[gameids[i]].moves);	
+		const results = evaluatePieces(moves);
+
+		results.forEach(function(move, idx) { // { r: 2, n: 3, b: 2, q: 5 }
+			if (!averages[idx]) {
+				averages[idx] = { r: 0, n: 0, b: 0, q: 0 };
+			}
+			updateAverage(averages[idx], move, i);
+		})
+		console.log("game " + (i+1));
+	}
+
+	saveObject(averages, "piecevalues.json");
+}
+
+
+let saveObject = function(obj, filename) {
+  try {
+    const json = JSON.stringify(obj);	
+    fs.writeFileSync(filename, json);
+  } catch (e) {
+    console.log(e);
+  }
+}
+
+/*
+	Load a trie of all moves played in a collection of games. We expect the data to be a JSON file of the form
+	{
+		c:{
+			'e4' : {'e5': {}, ...},
+			'd4' : {'nf3 : {}, '}
+		},
+		d: [1004, 3005]  // gameIds of all games that terminated at a given node
+	}
+*/
+
 let gamedata = initializeJSON("gmgames.json");
-let moves = parseMoves(gamedata[1].moves);
-console.log(evaluatePieces(moves));
+processGames(gamedata);
+
+//console.log(evaluatePieces(moves));

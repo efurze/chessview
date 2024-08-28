@@ -1,7 +1,6 @@
 const readline = require('readline');
 const fs = require('fs');
 const crypto = require('crypto');
-var mmh3 = require('murmurhash3');
 const {Chess} = require('./chess.js');
 
 

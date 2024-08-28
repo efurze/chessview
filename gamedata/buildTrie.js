@@ -59,6 +59,33 @@ let saveTrie = function(trie, filename) {
   }
 }
 
+let saveGame = function(data){
+
+  try {
+    fs.writeFileSync("gmgames.json", JSON.stringify(data));
+  } catch (e) {
+    console.log(e);
+  }
+
+}
+
+const games = {};
+let parseGameMetadata = function(data, id){
+  const gamedata = {};
+  data.forEach(function(line){
+    if (line.startsWith("[")){
+      const start = line.indexOf(" ");
+      const end = line.indexOf("]")
+      const tag = line.slice(1, start);
+      const value = line.slice(start+1, end);
+      gamedata[tag] = value;
+    } else if (line.startsWith("1.")) {
+      gamedata.moves = line;
+    }
+  })
+  games[id] = gamedata;
+}
+
 // Create an interface to read from stdin line by line
 const rl = readline.createInterface({
     input: process.stdin,
@@ -67,10 +94,17 @@ const rl = readline.createInterface({
 });
 
 const trie_root = initializeTrie(TRIE_FILE);
+let filedata = []; // array of lines
 
 rl.on('line', (line) => {
+  if (line.startsWith("[Event")){
+    filedata = [];
+  }
+  
+  filedata.push(line);
+
   if (line.startsWith("1.")) {
-    if (!line.endsWith("1-0") && !line.endsWith("0-1") && !line.endsWith("1/2-1/2")) {
+    if (!line.endsWith("1-0") && !line.endsWith("0-1") && !line.endsWith("1/2-1/2") && !line.endsWith("*")) {
       console.log("skipping malformed pgn: " + line);
       return;
     }
@@ -80,7 +114,6 @@ rl.on('line', (line) => {
     }
     try {
       //chess.reset();
-      let match;
       let moves = [];
       let turns = line.split(/\d+\. /); //['e4 e5 ', 'Nf3 Nc6' ...]
       turns.forEach(function(turn) {
@@ -97,19 +130,22 @@ rl.on('line', (line) => {
         //chess.move(halfmoves[0]);
         moves.push(halfmoves[0]);
 
-        if (halfmoves[1] !== "1-0" && halfmoves[1] !== "0-1" && halfmoves[1] !== "1/2-1/2") {
+        if (halfmoves[1] !== "1-0" && halfmoves[1] !== "0-1" && halfmoves[1] !== "1/2-1/2" && halfmoves[1] !== "*") {
           //chess.move(halfmoves[1]);
           moves.push(halfmoves[1]);
         }
       }); // forEach(turn)
       
       addLineToTrie(trie_root, moves, gameId);
+      parseGameMetadata(filedata, gameId);
+      filedata = [];
       console.log("added game: " + gameId);
       gameId ++;
-
-      //if (gameId > 1000) {
-      //  rl.close();
-      //}
+/*
+      if (gameId > 1) {
+        rl.close();
+      }
+*/
     } catch (e) {
       console.log(e);
       console.log(line);  
@@ -120,5 +156,6 @@ rl.on('line', (line) => {
 
 rl.on('close', () => {
   console.log("end of input");
+  saveGame(games);
   saveTrie(trie_root, TRIE_FILE);
 });
