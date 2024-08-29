@@ -23,28 +23,6 @@ let saveObject = function(obj, filename) {
   }
 }
 
-let descendentCount = function(root) {
-  if (!root)
-    return;
-
-  let childCount = 0;
-  let children = {};
-  if ('c' in root) {
-    children = root.c;
-  } else {
-    children = root;
-  }
-
-  let keys = Object.keys(children);
-  if (keys.length == 0) {
-    return 1;
-  }
-
-  keys.forEach(function(key) {
-    childCount += descendentCount(children[key]);
-  });
-  return childCount;
-}
 
 
 let parseYear = function(str) {
@@ -163,20 +141,24 @@ let findNovelties = function(root, gamedata, chess, move /*'e4'*/) {
       novelties[key] = root.games.map(function(gameid){
         return gamedata[gameid].Date;
       });
+
+      const moves = chess.history();
+      console.log("Found novelty at " + moves.join(' '));
     }
   }
 
-  
+  if (move.length > 0) {
+    chess.move(move);
+  }
 
   let moves = Object.keys(root.c);
 
   moves.forEach(function(move) { // 'Nf3'
-    chess.move(move);
     let results = findNovelties(root.c[move], gamedata, chess, move);
-    chess.undo();
-
     mergeNovelties(results, novelties);
   })
+
+  chess.undo();
 
   return novelties;
 }
