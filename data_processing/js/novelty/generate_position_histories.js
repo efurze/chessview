@@ -1,33 +1,43 @@
 /*
   generate_position_histories.js
 
-  USAGE: node generate_position_histories.js input.json output.json
+  USAGE: node generate_position_histories.js input_dir output_dir
 
-  first parameter should be the name of a json file with game data in the following format:
+  Script will iterate over all files in input_dir. It expects each file to have game info in the following format:
   {
-    1: {"Date":"\"1900.??.??\"","White":"\"Maroczy, Geza\"","Black":"\"Mieses, Jacques\"","moves":"1. e4 d5 2. exd5 Qxd5 ...""},
-    2: ...
+   "Event": "FIDE (27) 1967-1969",
+   "Site": "Moskou cm sf",
+   "Date": "1968.??.??",
+   "Round": "1",
+   "White": "Korchnoi, Viktor",
+   "Black": "Tal, Mikhail",
+   "Result": "0-1",
+   "ECO": "E05k",
+   "Moves": "1. Nf3 Nf6 2. c4 e6 3. g3 d5 4. Bg2 Be7 5. O-O O-O 6. d4 dxc4 7. Qc2 a6 8. a4 Nc6 9. Qxc4 Qd5 10. Nbd2 Rd8 11. e3 Qh5 12. e4 Bd7 13. b3 b5 14. Qc3 bxa4 15. bxa4 Bb4 16. Qc2 Rac8 17. Nc4 Be8 18. h3 Rxd4 19. g4 Qc5 20. Nxd4 Nxd4 21. Qd3 Rd8 22. Bb2 e5 23. Rfc1 Qe7 24. Bxd4 Rxd4 25. Qg3 Qe6 26. Qb3 a5 27. Qc2 c5 28. Ne3 Bc6 29. Rd1 g6 30. f3 c4 31. Qe2 Bc5 32. Kh1 c3 33. Nc2 Rxa4 34. Qd3 Bd4 35. f4 Rxa1 36. Rxa1 Bb6 37. Rb1 Bc5 38. f5 Qd7 39. Qxc3 Nxe4 40. Qxe5 Bd6 41. Qxa5 Bc7 42. Qb4 Qd3 0-1"
   }
 
-  This script will output a json file containing every move made in every position in the games from the input file. The output format is:
-
+  This script will write to the output_dir. It will generate one file for each unique board position in the format: 
   {
-    <fen>: {
-      <move> (e.g. 'nf3'): [23, 54, 56, 78 ...],
-      <move>: [<gameid>, <gameid>, ...]
-    }
-
-    <fen>: {...}
+    <move>: [<gameid>, <gameid>, ...]
+    <move>: [<gameid>, <gameid>, ...]
     ...
   }
 
-  It is a mapping of unique FENs to a map from each known move in that position to an array of gameids in which the move was made.
-  Gameids will match the ids in the input file
+  e.g.
+  {
+   "Qg3": ["0005e0f8f905947f", ...]
+   ...
+  }
+
+  It is a mapping from each known move in that position to an array of gameids in which the move was made.
+  Gameids will match the names of the input file
 
 */
 
 const fs = require('fs');
+const path = require('path');
 const {Chess} = require('../../../gamedata/chess.js');
+const crypto = require('crypto');
 
 
 let initializeJSON = function(filename) {
@@ -37,7 +47,7 @@ let initializeJSON = function(filename) {
     const data = fs.readFileSync(filename, 'utf8');
     obj = JSON.parse(data);
   } catch (e) {
-    console.log("JSON file not read: " + e.toString());
+    //console.log("JSON file not read: " + e.toString());
   }
   return obj;
 }
@@ -47,46 +57,19 @@ let saveObject = function(obj, filename) {
     const json = JSON.stringify(obj, null, " "); 
     fs.writeFileSync(filename, json);
   } catch (e) {
-    console.log(e);
+    console.error(e);
   }
 }
 
-
-
-let parseYear = function(str) {
-  let date = 0;
-  if (str) {
-    str = str.replace(/"/g, "");
-    const parts = str.split(".");
-    date = parts[0];
+let enumerateGamefiles = function(dirpath){
+  let files = [];
+  try {
+    files = fs.readdirSync(dirpath);  
+  } catch (err) {
+      console.error('Unable to scan directory:', err);
   }
-  return date;
+  return files;
 }
-
-let parseDate = function(str) {
-  let date = "";
-  if (str) {
-    str = str.replace(/"/g, "");
-    const parts = str.split(".");
-    date = parts[0];
-    if (parts[1] != "??") {
-      date = parts[1] + "-" + date;
-    }
-    if (parts[2] != "??") {
-      date = parts[2] + "-" + date;
-    }
-  }
-  return date;
-}
-
-let printDates = function(games) {
-  const gameids = Object.keys(games);
-  gameids.forEach(function(id) {
-    console.log("Game " + id + ": " + parseDate(games[id].Date));
-  });
-}
-
-
 
 
 /*
@@ -96,32 +79,54 @@ let printDates = function(games) {
     ...
   }
 */
-let processGame = function(gameinfo, gameid, histories) {
+let processGame = function(gameinfo, gameid, outputdir) {
 
   const chess = new Chess();
-  const moves = parseMoves(gameinfo.moves);
+  const moves = parseMoves(gameinfo.Moves);
   moves.forEach(function(move){
     let fen = chess.fen();
-    if (!(fen in histories)) {
-      histories[fen] = {};
-    }
-
-    let movesfromposition = histories[fen];
+    const hash = crypto.createHash('sha256').update(fen).digest('hex').slice(0, 16);
+    const filepath = path.join(outputdir, hash);
+    
+    /*
+      Load file. Expecting:
+      {
+        <move> (e.g. 'nf3'): [SHA64, SHA64, SHA64 ...],
+        <move>: [<gameid>, <gameid>, ...]
+      }
+    */
+    let movesfromposition = initializeJSON(filepath); 
+    
     if (!(move in movesfromposition)) {
       movesfromposition[move] = [];
     }
-    movesfromposition[move].push(gameid);
+
+    // prevent duplicates
+    let dupe = false;
+    for (let i=0; i<movesfromposition[move].length; i++) {
+      if (movesfromposition[move][i] == gameid) {
+        dupe = true;
+        break;
+      }
+    }
+
+    if (!dupe) {
+      movesfromposition[move].push(gameid);
+      // save
+      saveObject(movesfromposition, filepath);
+    }
+
     chess.move(move);
   })
 }
 
 let parseMoves = function(line){
   if (!line.endsWith("1-0") && !line.endsWith("0-1") && !line.endsWith("1/2-1/2") && !line.endsWith("*")) {
-      console.log("skipping malformed pgn: " + line);
+      console.error("skipping malformed pgn: " + line);
       return [];
     }
     if (line.includes("eval")) {
-      console.log("skipping malformed pgn: " + line);
+      console.error("skipping malformed pgn: " + line);
       return [];
     }
 
@@ -147,8 +152,8 @@ let parseMoves = function(line){
       }); // forEach(turn)
       
     } catch (e) {
-      console.log(e);
-      console.log(line);  
+      console.error(e);
+      console.error(line);  
     }
 
     return moves;
@@ -158,26 +163,26 @@ let parseMoves = function(line){
 let runScript = function() {
   const args = process.argv.slice(2); // first 2 args are node and this file
   if (args.length < 2) {
-    console.log("Not enough parameters. USAGE: node generate_position_histories.js input.json output.json");
+    console.error("Not enough parameters. USAGE: node generate_position_histories.js input/ output/");
     process.exit(1);
   }
 
-  console.log("loading game data from " + args[0]);
-  let gamedata = initializeJSON(args[0]);
+  const inputpath = args[0];
+  const outputpath = args[1];
+  console.log("loading game data from " + inputpath);
+  const gamefiles = enumerateGamefiles(inputpath);
 
-  const histories = {};
+  console.log("found " + gamefiles.length + " files");
 
-  const gameids = Object.keys(gamedata);
-  gameids.forEach(function(id, idx){
-    processGame(gamedata[id], id, histories);
+
+  gamefiles.forEach(function(id, idx){
+    const filepath = path.join(inputpath, id);
+    const gamedata = initializeJSON(filepath);
+    processGame(gamedata, id, outputpath);
     if (idx % 10 == 0){
-      console.log("processed game " + id);
+      console.log("processed game " + idx);
     }
   })
-
-
-  console.log("saving output to " + args[1]);
-  saveObject(histories, args[1]);
 }
 
 runScript();
