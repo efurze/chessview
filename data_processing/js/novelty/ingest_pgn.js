@@ -118,8 +118,9 @@ let processGame = function(buffer) {
 		}
 	}) // forEach(line)
 
-	const hash = crypto.createHash('sha256').update(moves.join()).digest('hex');
-	saveObject(gamedata, OUTPUT_PATH + hash);
+	const hash256 = crypto.createHash('sha256').update(moves.join()).digest('hex');
+	const hash64 = hash256.slice(0, 16);
+	saveObject(gamedata, OUTPUT_PATH + hash64);
 }
 
 
