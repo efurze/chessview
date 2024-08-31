@@ -54,17 +54,33 @@ let initializeJSON = function(filename) {
 
 let saveObject = function(obj, filename) {
   try {
-    const json = JSON.stringify(obj, null, " "); 
+    const json = JSON.stringify(obj, null, " ");
     fs.writeFileSync(filename, json);
   } catch (e) {
     console.error(e);
   }
 }
 
+let initializeOutputDirectory = function(outputdir) {
+  for (let i=0; i<256; i++) {
+    const dir = path.join(outputdir, i.toString(16).padStart(2, '0'));
+    fs.mkdirSync(dir, { recursive: true });
+  }
+}
+
+/*
+  this returns an array of relative paths from the inputdir
+  e.g. ["00/2ae3411265fbd2", ...]
+*/
 let enumerateGamefiles = function(dirpath){
   let files = [];
   try {
-    files = fs.readdirSync(dirpath);  
+    files = enumerateFilesRecursively(dirpath);
+
+    const normalizeDir = path.normalize(dirpath);
+    files = files.map(function(filepath){
+      return path.join(path.basename(path.dirname(filepath)), path.basename(filepath));
+    })
   } catch (err) {
       console.error('Unable to scan directory:', err);
   }
@@ -72,52 +88,24 @@ let enumerateGamefiles = function(dirpath){
 }
 
 
-/*
-  gameinfo: {
-    Date: "",
-    moves: "1. e4 e5 2. ..."
-    ...
-  }
-*/
-let processGame = function(gameinfo, gameid, outputdir) {
-
-  const chess = new Chess();
-  const moves = parseMoves(gameinfo.Moves);
-  moves.forEach(function(move){
-    let fen = chess.fen();
-    const hash = crypto.createHash('sha256').update(fen).digest('hex').slice(0, 16);
-    const filepath = path.join(outputdir, hash);
-    
-    /*
-      Load file. Expecting:
-      {
-        <move> (e.g. 'nf3'): [SHA64, SHA64, SHA64 ...],
-        <move>: [<gameid>, <gameid>, ...]
-      }
-    */
-    let movesfromposition = initializeJSON(filepath); 
-    
-    if (!(move in movesfromposition)) {
-      movesfromposition[move] = [];
+function enumerateFilesRecursively(dir, fileList = []) {
+    let files = [];
+    try {
+      files = fs.readdirSync(dir, { withFileTypes: true });
+    } catch (err) {
+      console.error('Unable to scan directory:', err);   
     }
 
-    // prevent duplicates
-    let dupe = false;
-    for (let i=0; i<movesfromposition[move].length; i++) {
-      if (movesfromposition[move][i] == gameid) {
-        dupe = true;
-        break;
-      }
-    }
+    files.forEach(file => {
+        const filePath = path.join(dir, file.name);
+        if (file.isDirectory()) {
+            enumerateFilesRecursively(filePath, fileList);
+        } else {
+            fileList.push(filePath);
+        }
+    });
 
-    if (!dupe) {
-      movesfromposition[move].push(gameid);
-      // save
-      saveObject(movesfromposition, filepath);
-    }
-
-    chess.move(move);
-  })
+    return fileList;
 }
 
 let parseMoves = function(line){
@@ -160,6 +148,55 @@ let parseMoves = function(line){
 }
 
 
+/*
+  gameinfo: {
+    Date: "",
+    moves: "1. e4 e5 2. ..."
+    ...
+  }
+*/
+let processGame = function(gameinfo, gameid, outputdir) {
+
+  const chess = new Chess();
+  const moves = parseMoves(gameinfo.Moves);
+  moves.forEach(function(move){
+    let fen = chess.fen();
+    const hash = crypto.createHash('sha256').update(fen).digest('hex').slice(0, 16);
+    const filepath = path.join(outputdir, hash.slice(0,2) + path.sep + hash.slice(2));
+    
+    /*
+      Load file. Expecting:
+      {
+        <move> (e.g. 'nf3'): [SHA64, SHA64, SHA64 ...],
+        <move>: [<gameid>, <gameid>, ...]
+      }
+    */
+    let movesfromposition = initializeJSON(filepath); 
+    
+    if (!(move in movesfromposition)) {
+      movesfromposition[move] = [];
+    }
+
+    // prevent duplicates
+    let dupe = false;
+    for (let i=0; i<movesfromposition[move].length; i++) {
+      if (movesfromposition[move][i] == gameid) {
+        dupe = true;
+        break;
+      }
+    }
+
+    if (!dupe) {
+      movesfromposition[move].push(gameid);
+      // save
+      saveObject(movesfromposition, filepath);
+    }
+
+    chess.move(move);
+  })
+}
+
+
 let runScript = function() {
   const args = process.argv.slice(2); // first 2 args are node and this file
   if (args.length < 2) {
@@ -172,13 +209,19 @@ let runScript = function() {
   console.log("loading game data from " + inputpath);
   const gamefiles = enumerateGamefiles(inputpath);
 
+
   console.log("found " + gamefiles.length + " files");
 
+  initializeOutputDirectory(outputpath);
 
-  gamefiles.forEach(function(id, idx){
+  gamefiles.forEach(function(id, idx){ // id = "00/2ae3411265fbd2"
     const filepath = path.join(inputpath, id);
     const gamedata = initializeJSON(filepath);
-    processGame(gamedata, id, outputpath);
+    processGame(
+      gamedata, 
+      id.replace(path.sep, ""), // just save the unadulterated hash of the gamefile 
+      outputpath
+    );
     if (idx % 10 == 0){
       console.log("processed game " + idx);
     }

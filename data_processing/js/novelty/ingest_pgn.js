@@ -1,5 +1,6 @@
 const fs = require('fs');
 const readline = require('readline');
+const path = require('path');
 const crypto = require('crypto');
 
 let OUTPUT_PATH = "";
@@ -44,6 +45,13 @@ let saveObject = function(obj, filename) {
   	fs.writeFileSync(filename, json);
   } catch (e) {
     console.log(e);
+  }
+}
+
+let initializeOutputDirectory = function(outputdir) {
+  for (let i=0; i<256; i++) {
+    const dir = path.join(outputdir, i.toString(16).padStart(2, '0'));
+    fs.mkdirSync(dir, { recursive: true });
   }
 }
 
@@ -120,7 +128,7 @@ let processGame = function(buffer) {
 
 	const hash256 = crypto.createHash('sha256').update(moves.join()).digest('hex');
 	const hash64 = hash256.slice(0, 16);
-	saveObject(gamedata, OUTPUT_PATH + hash64);
+	saveObject(gamedata, path.join(OUTPUT_PATH, hash64.slice(0,2) + path.sep + hash64.slice(2)));
 }
 
 
@@ -132,9 +140,11 @@ let runScript = function() {
   }
 
   OUTPUT_PATH = args[1];
-  if (!OUTPUT_PATH.endsWith("/")) {
-  	OUTPUT_PATH = OUTPUT_PATH + "/";
+  if (!OUTPUT_PATH.endsWith(path.sep)) {
+  	OUTPUT_PATH = OUTPUT_PATH + path.sep;
   }
+
+  initializeOutputDirectory(OUTPUT_PATH);
 
   readFileLineByLine(args[0])
   	.then(function(){
