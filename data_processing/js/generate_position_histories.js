@@ -18,9 +18,12 @@
 
   This script will write to the output_dir. It will generate one file for each unique board position in the format: 
   {
-    <move>: [<gameid>, <gameid>, ...]
-    <move>: [<gameid>, <gameid>, ...]
-    ...
+    "fen": <fenstr>,
+    "moves": { 
+      <move>: [<gameid>, <gameid>, ...]
+      <move>: [<gameid>, <gameid>, ...]
+      ...
+    }
   }
 
   e.g.
@@ -36,7 +39,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const {Chess} = require('../../../gamedata/chess.js');
+const {Chess} = require('../../gamedata/chess.js');
 const crypto = require('crypto');
 
 
@@ -172,22 +175,26 @@ let processGame = function(gameinfo, gameid, outputdir) {
       }
     */
     let movesfromposition = initializeJSON(filepath); 
+    movesfromposition["fen"] = fen;
+    if (!("moves" in movesfromposition)) {
+      movesfromposition.moves = {};
+    }
     
-    if (!(move in movesfromposition)) {
-      movesfromposition[move] = [];
+    if (!(move in movesfromposition.moves)) {
+      movesfromposition.moves[move] = [];
     }
 
     // prevent duplicates
     let dupe = false;
-    for (let i=0; i<movesfromposition[move].length; i++) {
-      if (movesfromposition[move][i] == gameid) {
+    for (let i=0; i<movesfromposition.moves[move].length; i++) {
+      if (movesfromposition.moves[move][i] == gameid) {
         dupe = true;
         break;
       }
     }
 
     if (!dupe) {
-      movesfromposition[move].push(gameid);
+      movesfromposition.moves[move].push(gameid);
       // save
       saveObject(movesfromposition, filepath);
     }
