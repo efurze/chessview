@@ -112,7 +112,7 @@ function enumerateFilesRecursively(dir, fileList = []) {
 }
 
 let parseMoves = function(line){
-  if (!line.endsWith("1-0") && !line.endsWith("0-1") && !line.endsWith("1/2-1/2") && !line.endsWith("*")) {
+  if (!line || (!line.endsWith("1-0") && !line.endsWith("0-1") && !line.endsWith("1/2-1/2") && !line.endsWith("*"))) {
       console.error("skipping malformed pgn: " + line);
       return [];
     }
