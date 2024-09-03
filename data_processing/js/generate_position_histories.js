@@ -151,6 +151,54 @@ let parseMoves = function(line){
 }
 
 
+const POSITION_HASH = {};
+
+let getPosition = function(hash) {
+  if (hash in POSITION_HASH) {
+    return POSITION_HASH[hash];
+  } else {
+    return {};
+  }
+}
+
+let storePosition = function(hash, pos) {
+  POSITION_HASH[hash] = pos;
+}
+
+let writePositions = function(positions, dir) {
+  const hashes = Object.keys(positions);
+  const total = hashes.length;
+  let writecount = 0;
+
+  hashes.forEach(function(hash, idx) {
+    if (idx % 100 == 0) {
+      console.log("wrote " + idx + "/" + total);
+    }
+
+    if (occuranceCount(positions[hash]) < 100) {
+      return;
+    }
+
+    writecount++;
+    const filepath = path.join(dir, hash.slice(0,2) + path.sep + hash.slice(2));
+    saveObject(positions[hash], filepath);
+  })
+
+  console.log("wrote out " + writecount + "unique positions");
+}
+
+let occuranceCount = function(position) {
+  if (!position || !position.moves){
+    return 0;
+  }
+  let count = 0;
+  const keys = Object.keys(position.moves);
+  keys.forEach(function(move) {
+    count += position.moves[move].length;
+  })
+  return count;
+}
+
 /*
   gameinfo: {
     Date: "",
@@ -165,7 +213,7 @@ let processGame = function(gameinfo, gameid, outputdir) {
   moves.forEach(function(move){
     let fen = chess.fen();
     const hash = crypto.createHash('sha256').update(fen).digest('hex').slice(0, 16);
-    const filepath = path.join(outputdir, hash.slice(0,2) + path.sep + hash.slice(2));
+    //const filepath = path.join(outputdir, hash.slice(0,2) + path.sep + hash.slice(2));
     
     /*
       Load file. Expecting:
@@ -174,7 +222,7 @@ let processGame = function(gameinfo, gameid, outputdir) {
         <move>: [<gameid>, <gameid>, ...]
       }
     */
-    let movesfromposition = initializeJSON(filepath); 
+    let movesfromposition = getPosition(hash); //initializeJSON(filepath); 
     movesfromposition["fen"] = fen;
     if (!("moves" in movesfromposition)) {
       movesfromposition.moves = {};
@@ -196,10 +244,16 @@ let processGame = function(gameinfo, gameid, outputdir) {
     if (!dupe) {
       movesfromposition.moves[move].push(gameid);
       // save
-      saveObject(movesfromposition, filepath);
+      //saveObject(movesfromposition, filepath);
+      storePosition(hash, movesfromposition);
     }
 
-    chess.move(move);
+    try {
+      chess.move(move);
+    } catch (err) {
+      console.error("Chess error: " + err);
+      throw err;
+    }
   })
 }
 
@@ -216,7 +270,6 @@ let runScript = function() {
   console.log("loading game data from " + inputpath);
   const gamefiles = enumerateGamefiles(inputpath);
 
-
   console.log("found " + gamefiles.length + " files");
 
   initializeOutputDirectory(outputpath);
@@ -224,15 +277,23 @@ let runScript = function() {
   gamefiles.forEach(function(id, idx){ // id = "00/2ae3411265fbd2"
     const filepath = path.join(inputpath, id);
     const gamedata = initializeJSON(filepath);
-    processGame(
-      gamedata, 
-      id.replace(path.sep, ""), // just save the unadulterated hash of the gamefile 
-      outputpath
-    );
+    try{
+      processGame(
+        gamedata, 
+        id.replace(path.sep, ""), // just save the unadulterated hash of the gamefile 
+        outputpath
+      );
+    } catch (err) {
+
+    }
+    
     if (idx % 10 == 0){
       console.log("processed game " + idx);
     }
   })
+
+  console.log("writing out positions");
+  writePositions(POSITION_HASH, outputpath);
 }
 
 runScript();
