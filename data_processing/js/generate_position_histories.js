@@ -64,6 +64,8 @@ let saveObject = function(obj, filename) {
   }
 }
 
+
+
 let initializeOutputDirectory = function(outputdir) {
   for (let i=0; i<256; i++) {
     const dir = path.join(outputdir, i.toString(16).padStart(2, '0'));
@@ -151,18 +153,33 @@ let parseMoves = function(line){
 }
 
 
-const POSITION_HASH = {};
-
-let getPosition = function(hash) {
-  if (hash in POSITION_HASH) {
-    return POSITION_HASH[hash];
-  } else {
-    return {};
-  }
+let POSITION_HASH = {};
+ 
+let getPosition = function(hash, dir) {
+   if (hash in POSITION_HASH) {
+     return POSITION_HASH[hash];
+   } else {
+    const ret = initializeJSON(path.join(dir, hashToFile(hash)));
+    if ('fen' in ret) {
+      POSITION_HASH[hash] = ret;
+    }
+    return ret;
+   }
+ }
+ 
+// turns 00308b5db58e3b6b into 00/308b5db58e3b6b
+let hashToFile = function(hash){
+  return path.join(hash.slice(0,2), hash.slice(2));
 }
 
-let storePosition = function(hash, pos) {
-  POSITION_HASH[hash] = pos;
+ let storePosition = function(hash, pos) {
+   POSITION_HASH[hash] = pos;
+ }
+ 
+let flushCache = function(dir) {
+  console.log("Flushing cache");
+  writePositions(POSITION_HASH, dir);
+  POSITION_HASH = {};
 }
 
 let writePositions = function(positions, dir) {
@@ -171,20 +188,16 @@ let writePositions = function(positions, dir) {
   let writecount = 0;
 
   hashes.forEach(function(hash, idx) {
-    if (idx % 100 == 0) {
-      console.log("wrote " + idx + "/" + total);
-    }
-
-    if (occuranceCount(positions[hash]) < 100) {
+    if (occuranceCount(positions[hash]) < 50) {
       return;
     }
 
     writecount++;
-    const filepath = path.join(dir, hash.slice(0,2) + path.sep + hash.slice(2));
+    const filepath = path.join(dir, hashToFile(hash));
     saveObject(positions[hash], filepath);
   })
 
-  console.log("wrote out " + writecount + "unique positions");
+  console.log("Wrote out " + writecount + " unique positions");
 }
 
 let occuranceCount = function(position) {
@@ -222,7 +235,7 @@ let processGame = function(gameinfo, gameid, outputdir) {
         <move>: [<gameid>, <gameid>, ...]
       }
     */
-    let movesfromposition = getPosition(hash); //initializeJSON(filepath); 
+    let movesfromposition = getPosition(hash, outputdir);  
     movesfromposition["fen"] = fen;
     if (!("moves" in movesfromposition)) {
       movesfromposition.moves = {};
@@ -242,9 +255,8 @@ let processGame = function(gameinfo, gameid, outputdir) {
     }
 
     if (!dupe) {
-      movesfromposition.moves[move].push(gameid);
       // save
-      //saveObject(movesfromposition, filepath);
+      movesfromposition.moves[move].push(gameid);
       storePosition(hash, movesfromposition);
     }
 
@@ -287,13 +299,18 @@ let runScript = function() {
 
     }
     
-    if (idx % 10 == 0){
+    if (idx % 100 == 0){
       console.log("processed game " + idx);
     }
+
+    if (idx % 2000 == 0){
+      flushCache(outputpath);
+    }
+
   })
 
-  console.log("writing out positions");
-  writePositions(POSITION_HASH, outputpath);
+  console.log("End of input");
+  flushCache(outputpath);
 }
 
 runScript();
