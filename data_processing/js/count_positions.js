@@ -38,9 +38,9 @@
 */
 
 const fs = require('fs');
+const fsp = require('fs').promises;
 const path = require('path');
-const {Chess} = require('../../gamedata/chess.js');
-const crypto = require('crypto');
+const { Worker } = require('worker_threads');
 
 
 let initializeJSON = function(filename) {
@@ -53,6 +53,16 @@ let initializeJSON = function(filename) {
     //console.log("JSON file not read: " + e.toString());
   }
   return obj;
+}
+
+let initializeJSONAsync = function(filename) {
+  return fsp.readFile(filename, 'utf8')
+    .then(function(data){
+      return JSON.parse(data);
+    })
+    .catch(function(err){
+      return {};
+    });
 }
 
 let saveObject = function(obj, filename) {
@@ -105,47 +115,20 @@ function enumerateFilesRecursively(dir, fileList = []) {
     return fileList;
 }
 
-let parseMoves = function(line){
-  if (!line || (!line.endsWith("1-0") && !line.endsWith("0-1") && !line.endsWith("1/2-1/2") && !line.endsWith("*"))) {
-      console.error("skipping malformed pgn: " + line);
-      return [];
-    }
-    if (line.includes("eval")) {
-      console.error("skipping malformed pgn: " + line);
-      return [];
-    }
 
-    let moves = [];
-
-    try {
-      let turns = line.split(/\d+\. /); //['e4 e5 ', 'Nf3 Nc6' ...]
-      turns.forEach(function(turn) {
-        turn = turn.trim();
-        if (!turn.length) {
-          return;
-        }
-        // 'e4 e5 ' 
-        let halfmoves = turn.split(' ');
-        //console.log(halfmoves);
-        
-        moves.push(halfmoves[0]);
-
-        if (halfmoves[1] !== "1-0" && halfmoves[1] !== "0-1" && halfmoves[1] !== "1/2-1/2" && halfmoves[1] !== "*") {
-          //chess.move(halfmoves[1]);
-          moves.push(halfmoves[1]);
-        }
-      }); // forEach(turn)
-      
-    } catch (e) {
-      console.error(e);
-      console.error(line);  
-    }
-
-    return moves;
-}
 
 
 const POSITION_OCCURRANCE = {};
+
+function mergeResults(result) {
+  Object.keys(result).forEach(function(key){
+    if (!(key in POSITION_OCCURRANCE)) {
+      POSITION_OCCURRANCE[key] = 0;
+    }
+
+    POSITION_OCCURRANCE[key] += result[key];
+  });
+}
 
 /*
   gameinfo: {
@@ -154,30 +137,9 @@ const POSITION_OCCURRANCE = {};
     ...
   }
 */
-let processGame = function(gameinfo, gameid, outputdir) {
-
-  const chess = new Chess();
-  const moves = parseMoves(gameinfo.Moves);
-  moves.forEach(function(move){
-    let fen = chess.fen();
-    const hash = crypto.createHash('sha256').update(fen).digest('hex').slice(0, 16);
- 
-    if (!(hash in POSITION_OCCURRANCE)) {
-      POSITION_OCCURRANCE[hash] = 0;
-    }
-    POSITION_OCCURRANCE[hash]++;
-    
-    try {
-      chess.move(move);
-    } catch (err) {
-      console.error("Chess error: " + err);
-      throw err;
-    }
-  })
-}
 
 
-let runScript = function() {
+function run() {
   const args = process.argv.slice(2); // first 2 args are node and this file
   if (args.length < 2) {
     console.error("Not enough parameters. USAGE: node generate_position_histories.js input/ output/");
@@ -187,41 +149,94 @@ let runScript = function() {
   const inputpath = args[0];
   const outputpath = args[1];
   console.log("loading game data from " + inputpath);
-  const gamefiles = enumerateGamefiles(inputpath).slice(0, 500);
+  const files = enumerateGamefiles(inputpath).slice(0, 500);
 
-  console.log("found " + gamefiles.length + " files");
+  const total = files.length;
+  console.log("found " + total + " files");
 
-  gamefiles.forEach(function(id, idx){ // id = "00/2ae3411265fbd2"
+  let pending = 0;
+  let count = 0;
+
+  function start(id) {
+    pending ++;
     const filepath = path.join(inputpath, id);
-    const gamedata = initializeJSON(filepath);
-    try{
-      processGame(
-        gamedata, 
-        id.replace(path.sep, ""), // just save the unadulterated hash of the gamefile 
-        outputpath
-      );
-    } catch (err) {
-      console.error(err);
+    initializeJSONAsync(filepath).then(finish).catch(onError).finally(onFinally);
+  }
+
+  function finish(game) {
+    let finished = false;
+    let resolve = null, reject = null;
+    let p = new Promise((res, rej) => {
+      resolve = res;
+      reject = rej;
+    }) // Promise
+
+    const worker = new Worker('./process_game_worker.js', {
+      workerData: { data: game }
+    });
+
+    worker.on('message', function(result){
+      //console.log("worker message");
+      if (!finished) {
+        finished = true;
+        mergeResults(result);
+        resolve();
+      }
+    })
+
+    worker.on('error', function(){
+      //console.log("worker error");
+      if (!finished) {
+        finished = true;
+        resolve();
+      }
+    })
+
+    worker.on('exit', function(){
+      //console.log("worker exit");
+      if (!finished) {
+        finished = true;
+        resolve();
+      }
+    })
+
+    return p;
+
+  } // function finish()
+
+  function onError(err) {console.error(err);}
+  function onFinally() {
+    pending --;
+    count ++;
+    if (count % 10 == 0) {
+      console.log("processed " + count);
     }
-    
-    if (idx % 100 == 0){
-      console.log("processed game " + idx);
+
+    if (files.length) {
+      start(files.shift());
+    } else if (pending == 0) {
+      // done
+      console.log("End of input");
+      const hashes = Object.keys(POSITION_OCCURRANCE);
+      hashes.forEach(function(hash) {
+        if (POSITION_OCCURRANCE[hash] > 50) {
+          console.log(hash, POSITION_OCCURRANCE[hash]);
+        }
+      })
     }
+  }
 
-  })
-
-  console.log("End of input");
-
-  const hashes = Object.keys(POSITION_OCCURRANCE);
-  hashes.forEach(function(hash) {
-    if (POSITION_OCCURRANCE[hash] > 50) {
-      console.log(hash, POSITION_OCCURRANCE[hash]);
-    }
-  })
-
+  start(files.shift());
+  start(files.shift());
+  start(files.shift());
+  start(files.shift());
 }
 
-runScript();
+
+
+run();
+
+
 
 
 
