@@ -41,6 +41,7 @@ const fs = require('fs');
 const fsp = require('fs').promises;
 const path = require('path');
 const { Worker } = require('worker_threads');
+//const { ProcessGame } = require('./process_game_worker');
 
 
 let initializeJSON = function(filename) {
@@ -55,14 +56,12 @@ let initializeJSON = function(filename) {
   return obj;
 }
 
-let initializeJSONAsync = function(filename) {
-  return fsp.readFile(filename, 'utf8')
-    .then(function(data){
-      return JSON.parse(data);
-    })
-    .catch(function(err){
-      return {};
-    });
+async function initializeJSONAsync(filename) {
+  try {
+    return JSON.parse(await fsp.readFile(filename, 'utf8'));
+  } catch(err) {
+    return {};
+  }
 }
 
 let saveObject = function(obj, filename) {
@@ -79,7 +78,7 @@ let saveObject = function(obj, filename) {
   this returns an array of relative paths from the inputdir
   e.g. ["00/2ae3411265fbd2", ...]
 */
-let enumerateGamefiles = function(dirpath){
+function enumerateGamefiles(dirpath){
   let files = [];
   try {
     files = enumerateFilesRecursively(dirpath);
@@ -121,6 +120,7 @@ function enumerateFilesRecursively(dir, fileList = []) {
 const POSITION_OCCURRANCE = {};
 
 function mergeResults(result) {
+
   Object.keys(result).forEach(function(key){
     if (!(key in POSITION_OCCURRANCE)) {
       POSITION_OCCURRANCE[key] = 0;
@@ -157,13 +157,43 @@ function run() {
   let pending = 0;
   let count = 0;
 
-  function start(id) {
-    pending ++;
-    const filepath = path.join(inputpath, id);
-    initializeJSONAsync(filepath).then(finish).catch(onError).finally(onFinally);
+  async function start(gameids) {
+    pending++;
+    const games = [];
+    try {
+      const promises = gameids.map(async (gameid) => {
+        const filepath = path.join(inputpath, gameid);
+        games.push(await initializeJSONAsync(filepath));
+      });
+      await Promise.all(promises);
+      //const game = await initializeJSONAsync(filepath);
+      //mergeResults(ProcessGame(game));
+      await finish(games);
+    } catch(err) {
+      console.error(err);
+    } finally {
+      pending--;
+      count++;
+      if (count % 10 == 0) {
+        console.log("processed " + count);
+      }
+  
+      if (files.length) {
+        start([files.shift()]);
+      } else if (pending == 0) {
+        // done
+        console.log("End of input");
+        const hashes = Object.keys(POSITION_OCCURRANCE);
+        hashes.forEach(function(hash) {
+          if (POSITION_OCCURRANCE[hash] > 50) {
+            console.log(hash, POSITION_OCCURRANCE[hash]);
+          }
+        })
+      }
+    }
   }
 
-  function finish(game) {
+  function finish(games) {
     let finished = false;
     let resolve = null, reject = null;
     let p = new Promise((res, rej) => {
@@ -171,15 +201,18 @@ function run() {
       reject = rej;
     }) // Promise
 
+    
     const worker = new Worker('./process_game_worker.js', {
-      workerData: { data: game }
+      workerData: { data: games }
     });
 
     worker.on('message', function(result){
       //console.log("worker message");
       if (!finished) {
         finished = true;
-        mergeResults(result);
+        result.forEach((elem) => {
+          mergeResults(elem);
+        })
         resolve();
       }
     })
@@ -204,32 +237,9 @@ function run() {
 
   } // function finish()
 
-  function onError(err) {console.error(err);}
-  function onFinally() {
-    pending --;
-    count ++;
-    if (count % 10 == 0) {
-      console.log("processed " + count);
-    }
-
-    if (files.length) {
-      start(files.shift());
-    } else if (pending == 0) {
-      // done
-      console.log("End of input");
-      const hashes = Object.keys(POSITION_OCCURRANCE);
-      hashes.forEach(function(hash) {
-        if (POSITION_OCCURRANCE[hash] > 50) {
-          console.log(hash, POSITION_OCCURRANCE[hash]);
-        }
-      })
-    }
+  for (let i = 0; i < 5; i++) {
+    start(files.splice(0, 100));
   }
-
-  start(files.shift());
-  start(files.shift());
-  start(files.shift());
-  start(files.shift());
 }
 
 

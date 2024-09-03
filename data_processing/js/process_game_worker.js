@@ -44,28 +44,37 @@ let parseMoves = function(line){
     return moves;
 }
 
-let processGame = function(gameinfo) {
+let processGame = function(games) {
+  const ret = [];
 
-  const positionhash = {};
-  const chess = new Chess();
-  const moves = parseMoves(gameinfo.Moves);
-  moves.forEach(function(move){
-    let fen = chess.fen();
-    const hash = crypto.createHash('sha256').update(fen).digest('hex').slice(0, 16);
- 
-    if (!(hash in positionhash)) {
-      positionhash[hash] = 0;
-    }
-    positionhash[hash]++;
-    
-    try {
-      chess.move(move);
-    } catch (err) {
-      console.error("Chess error: " + err);
-    }
-  })
-  return positionhash;
+
+  games.forEach((gameinfo, idx) => {
+    const positionhash = {};
+    const chess = new Chess();
+    const moves = parseMoves(gameinfo.Moves);
+    moves.forEach(function(move){
+      let fen = chess.fen();
+      const hash = crypto.createHash('sha256').update(fen).digest('hex').slice(0, 16);
+  
+      if (!(hash in positionhash)) {
+        positionhash[hash] = 0;
+      }
+      positionhash[hash]++;
+      
+      try {
+        chess.move(move);
+      } catch (err) {
+        console.error("Chess error: " + err);
+      }
+    })
+    ret.push(positionhash);
+  });
+
+
+  return ret;
 }
 
 const result = processGame(workerData.data);
 parentPort.postMessage(result);
+
+module.exports = { ProcessGame: processGame };
