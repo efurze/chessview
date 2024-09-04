@@ -150,6 +150,8 @@ let parseMoves = function(line){
     return moves;
 }
 
+let filterPassCount = 0;
+let filterFailCount = 0;
 
 /*
   gameinfo: {
@@ -165,6 +167,15 @@ let processGame = function(gameinfo, gameid, outputdir) {
   moves.forEach(function(move){
     let fen = chess.fen();
     const hash = crypto.createHash('sha256').update(fen).digest('hex').slice(0, 16);
+    if (!(hash in FILTER)) {
+      filterFailCount++;
+      return;
+    }
+
+    if (++filterPassCount % 1000 == 0) {
+      console.log("writing position " + filterPassCount, "filtered " + filterFailCount);
+    }
+
     const filepath = path.join(outputdir, hash.slice(0,2) + path.sep + hash.slice(2));
     
     /*
@@ -204,15 +215,18 @@ let processGame = function(gameinfo, gameid, outputdir) {
 }
 
 
+let FILTER = {};
+
 let runScript = function() {
   const args = process.argv.slice(2); // first 2 args are node and this file
-  if (args.length < 2) {
-    console.error("Not enough parameters. USAGE: node generate_position_histories.js input/ output/");
+  if (args.length < 3) {
+    console.error("Not enough parameters. USAGE: node generate_position_histories.js input/ output/ filter.json");
     process.exit(1);
   }
 
   const inputpath = args[0];
   const outputpath = args[1];
+  const filterfile = args[2];
   console.log("loading game data from " + inputpath);
   const gamefiles = enumerateGamefiles(inputpath);
 
@@ -221,15 +235,28 @@ let runScript = function() {
 
   initializeOutputDirectory(outputpath);
 
+  console.log("loading position filter from " + filterfile);
+  FILTER = initializeJSON(filterfile);
+  Object.keys(FILTER).forEach(function(key) {
+    if (FILTER[key] >= 100000) {
+      delete FILTER[key];
+    }
+  })
+  console.log("Filter has " + Object.keys(FILTER).length + " positions");
+
   gamefiles.forEach(function(id, idx){ // id = "00/2ae3411265fbd2"
     const filepath = path.join(inputpath, id);
     const gamedata = initializeJSON(filepath);
-    processGame(
-      gamedata, 
-      id.replace(path.sep, ""), // just save the unadulterated hash of the gamefile 
-      outputpath
-    );
-    if (idx % 10 == 0){
+    try {
+      processGame(
+        gamedata, 
+        id.replace(path.sep, ""), // just save the unadulterated hash of the gamefile 
+        outputpath
+      );
+    } catch (err) {
+      console.log(err);
+    }
+    if (idx % 1000 == 0){
       console.log("processed game " + idx);
     }
   })
