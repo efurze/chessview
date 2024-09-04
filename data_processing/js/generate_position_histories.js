@@ -167,47 +167,47 @@ let processGame = function(gameinfo, gameid, outputdir) {
   moves.forEach(function(move){
     let fen = chess.fen();
     const hash = crypto.createHash('sha256').update(fen).digest('hex').slice(0, 16);
-    if (!(hash in FILTER)) {
+    if ((hash in FILTER)) {
+
+      if (++filterPassCount % 1000 == 0) {
+        console.log("writing position " + filterPassCount, "filtered " + filterFailCount);
+      }
+
+      const filepath = path.join(outputdir, hash.slice(0,2) + path.sep + hash.slice(2));
+      
+      /*
+        Load file. Expecting:
+        {
+          <move> (e.g. 'nf3'): [SHA64, SHA64, SHA64 ...],
+          <move>: [<gameid>, <gameid>, ...]
+        }
+      */
+      let movesfromposition = initializeJSON(filepath); 
+      movesfromposition["fen"] = fen;
+      if (!("moves" in movesfromposition)) {
+        movesfromposition.moves = {};
+      }
+      
+      if (!(move in movesfromposition.moves)) {
+        movesfromposition.moves[move] = [];
+      }
+
+      // prevent duplicates
+      let dupe = false;
+      for (let i=0; i<movesfromposition.moves[move].length; i++) {
+        if (movesfromposition.moves[move][i] == gameid) {
+          dupe = true;
+          break;
+        }
+      }
+
+      if (!dupe) {
+        movesfromposition.moves[move].push(gameid);
+        // save
+        saveObject(movesfromposition, filepath);
+      }
+    } else {
       filterFailCount++;
-      return;
-    }
-
-    if (++filterPassCount % 1000 == 0) {
-      console.log("writing position " + filterPassCount, "filtered " + filterFailCount);
-    }
-
-    const filepath = path.join(outputdir, hash.slice(0,2) + path.sep + hash.slice(2));
-    
-    /*
-      Load file. Expecting:
-      {
-        <move> (e.g. 'nf3'): [SHA64, SHA64, SHA64 ...],
-        <move>: [<gameid>, <gameid>, ...]
-      }
-    */
-    let movesfromposition = initializeJSON(filepath); 
-    movesfromposition["fen"] = fen;
-    if (!("moves" in movesfromposition)) {
-      movesfromposition.moves = {};
-    }
-    
-    if (!(move in movesfromposition.moves)) {
-      movesfromposition.moves[move] = [];
-    }
-
-    // prevent duplicates
-    let dupe = false;
-    for (let i=0; i<movesfromposition.moves[move].length; i++) {
-      if (movesfromposition.moves[move][i] == gameid) {
-        dupe = true;
-        break;
-      }
-    }
-
-    if (!dupe) {
-      movesfromposition.moves[move].push(gameid);
-      // save
-      saveObject(movesfromposition, filepath);
     }
 
     chess.move(move);
