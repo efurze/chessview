@@ -153,12 +153,15 @@ let parseMoves = function(line){
 let filterPassCount = 0;
 let filterFailCount = 0;
 let positionHistoryCache = {};
+let cacheDirtyFlag = false;
 
-function getPosition(filename, dir) {
-  return positionHistoryCache[filename] ?? initializeJSON(filename, dir);
+function getPosition(id, dir) {
+  return positionHistoryCache[id] 
+    ?? initializeJSON(path.join(dir, hashToFile(id)));
 }
 
 function storePosition(pos, filename) {
+  cacheDirtyFlag = true;
   positionHistoryCache[filename] = pos;
 }
 
@@ -168,16 +171,24 @@ function hashToFile(hash){
 }
 
 function flushCache(dir) {
-  console.log("flushing cache...");
-  let writecount = 0;
+  if (cacheDirtyFlag) {
+    console.log("flushing cache...");
+    let writecount = 0;
 
-  Object.keys(positionHistoryCache).forEach(function(id, idx) {
-    writecount++;
-    const filepath = path.join(dir, id);
-    saveObject(positionHistoryCache[id], filepath);
-  })
+    Object.keys(positionHistoryCache).forEach(function(id, idx) {
+      writecount++;
+      const filepath = path.join(dir, hashToFile(id));
+      saveObject(positionHistoryCache[id], filepath);
+    })
 
-  console.log("Wrote out " + writecount + " unique positions");
+    cacheDirtyFlag = false;
+    console.log("Wrote out " + writecount + " unique positions");
+  }
+}
+
+function gameInPosition(gameid, pos) {
+  const str = JSON.stringify(pos);
+  return str.includes(gameid, 0);
 }
 
 /*
@@ -191,48 +202,55 @@ let processGame = function(gameinfo, gameid, outputdir) {
 
   const chess = new Chess();
   const moves = parseMoves(gameinfo.Moves);
-  moves.forEach(function(move){
-    let fen = chess.fen();
-    const hash = crypto.createHash('sha256').update(fen).digest('hex').slice(0, 16);
-    if (!FILTER || FILTER[hash]) {
-      
-      /*
-        Load file. Expecting:
-        {
-          <move> (e.g. 'nf3'): [SHA64, SHA64, SHA64 ...],
-          <move>: [<gameid>, <gameid>, ...]
+  try {
+    moves.forEach(function(move, idx){
+      let fen = chess.fen();
+      const hash = crypto.createHash('sha256').update(fen).digest('hex').slice(0, 16);
+      if (!FILTER || FILTER[hash]) {
+        
+        /*
+          Load file. Expecting:
+          {
+            <move> (e.g. 'nf3'): [SHA64, SHA64, SHA64 ...],
+            <move>: [<gameid>, <gameid>, ...]
+          }
+        */
+        let movesfromposition = getPosition(hash, outputdir); 
+
+        if (idx == 0 && gameInPosition(gameid, movesfromposition)) {
+          throw new Error("Game already processed");
         }
-      */
-      let movesfromposition = getPosition(hash); 
-      movesfromposition["fen"] = fen;
-      if (!("moves" in movesfromposition)) {
-        movesfromposition.moves = {};
-      }
-      
-      if (!(move in movesfromposition.moves)) {
-        movesfromposition.moves[move] = [];
-      }
 
-      // prevent duplicates
-      let dupe = false;
-      for (let i=0; i<movesfromposition.moves[move].length; i++) {
-        if (movesfromposition.moves[move][i] == gameid) {
-          dupe = true;
-          break;
+        movesfromposition["fen"] = fen;
+        if (!("moves" in movesfromposition)) {
+          movesfromposition.moves = {};
         }
+        
+        if (!(move in movesfromposition.moves)) {
+          movesfromposition.moves[move] = [];
+        }
+
+        // prevent duplicates
+        let dupe = false;
+        for (let i=0; i<movesfromposition.moves[move].length; i++) {
+          if (movesfromposition.moves[move][i] == gameid) {
+            dupe = true;
+            break;
+          }
+        }
+
+        if (!dupe) {
+          movesfromposition.moves[move].push(gameid);
+          // save
+          storePosition(movesfromposition, hash);
+        }
+      } else {
+        filterFailCount++;
       }
 
-      if (!dupe) {
-        movesfromposition.moves[move].push(gameid);
-        // save
-        storePosition(movesfromposition, hash);
-      }
-    } else {
-      filterFailCount++;
-    }
-
-    chess.move(move);
-  })
+      chess.move(move);
+    })
+  } catch (err) {}
 }
 
 
