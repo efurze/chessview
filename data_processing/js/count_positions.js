@@ -149,7 +149,7 @@ function run() {
   const inputpath = args[0];
   const outputpath = args[1];
   console.log("loading game data from " + inputpath);
-  const files = enumerateGamefiles(inputpath).slice(0, 500);
+  const files = enumerateGamefiles(inputpath);//.slice(0, 500);
 
   const total = files.length;
   console.log("found " + total + " files");
@@ -179,7 +179,7 @@ function run() {
       }
   
       if (files.length) {
-        start([files.shift()]);
+        start(files.splice(0, 100));
       } else if (pending == 0) {
         // done
         console.log("End of input");
@@ -237,7 +237,7 @@ function run() {
 
   } // function finish()
 
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 6; i++) {
     start(files.splice(0, 100));
   }
 }
