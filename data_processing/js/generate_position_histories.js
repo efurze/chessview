@@ -152,6 +152,33 @@ let parseMoves = function(line){
 
 let filterPassCount = 0;
 let filterFailCount = 0;
+let positionHistoryCache = {};
+
+function getPosition(filename, dir) {
+  return positionHistoryCache[filename] ?? initializeJSON(filename, dir);
+}
+
+function storePosition(pos, filename) {
+  positionHistoryCache[filename] = pos;
+}
+
+// turns 00308b5db58e3b6b into 00/308b5db58e3b6b
+function hashToFile(hash){
+  return path.join(hash.slice(0,2), hash.slice(2));
+}
+
+function flushCache(dir) {
+  console.log("flushing cache...");
+  let writecount = 0;
+
+  Object.keys(positionHistoryCache).forEach(function(id, idx) {
+    writecount++;
+    const filepath = path.join(dir, id);
+    saveObject(positionHistoryCache[id], filepath);
+  })
+
+  console.log("Wrote out " + writecount + " unique positions");
+}
 
 /*
   gameinfo: {
@@ -168,12 +195,6 @@ let processGame = function(gameinfo, gameid, outputdir) {
     let fen = chess.fen();
     const hash = crypto.createHash('sha256').update(fen).digest('hex').slice(0, 16);
     if (!FILTER || FILTER[hash]) {
-
-      if (++filterPassCount % 1000 == 0) {
-        console.log("writing position " + filterPassCount, "filtered " + filterFailCount);
-      }
-
-      const filepath = path.join(outputdir, hash.slice(0,2) + path.sep + hash.slice(2));
       
       /*
         Load file. Expecting:
@@ -182,7 +203,7 @@ let processGame = function(gameinfo, gameid, outputdir) {
           <move>: [<gameid>, <gameid>, ...]
         }
       */
-      let movesfromposition = initializeJSON(filepath); 
+      let movesfromposition = getPosition(hash); 
       movesfromposition["fen"] = fen;
       if (!("moves" in movesfromposition)) {
         movesfromposition.moves = {};
@@ -204,7 +225,7 @@ let processGame = function(gameinfo, gameid, outputdir) {
       if (!dupe) {
         movesfromposition.moves[move].push(gameid);
         // save
-        saveObject(movesfromposition, filepath);
+        storePosition(movesfromposition, hash);
       }
     } else {
       filterFailCount++;
@@ -261,10 +282,15 @@ let runScript = function() {
     } catch (err) {
       console.log(err);
     }
-    if (idx % 1000 == 0){
+    if (idx % 100 == 0){
       console.log("processed game " + idx);
     }
+    if (idx && idx % 20000 == 0) {
+      flushCache(outputpath);
+    }
   })
+
+  flushCache(outputpath);
 }
 
 runScript();
