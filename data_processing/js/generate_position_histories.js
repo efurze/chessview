@@ -167,7 +167,7 @@ let processGame = function(gameinfo, gameid, outputdir) {
   moves.forEach(function(move){
     let fen = chess.fen();
     const hash = crypto.createHash('sha256').update(fen).digest('hex').slice(0, 16);
-    if ((hash in FILTER)) {
+    if (!FILTER || FILTER[hash]) {
 
       if (++filterPassCount % 1000 == 0) {
         console.log("writing position " + filterPassCount, "filtered " + filterFailCount);
@@ -215,18 +215,18 @@ let processGame = function(gameinfo, gameid, outputdir) {
 }
 
 
-let FILTER = {};
+let FILTER = null;
 
 let runScript = function() {
   const args = process.argv.slice(2); // first 2 args are node and this file
-  if (args.length < 3) {
-    console.error("Not enough parameters. USAGE: node generate_position_histories.js input/ output/ filter.json");
+  if (args.length < 2) {
+    console.error("Not enough parameters. USAGE: node generate_position_histories.js input/ output/ [filter.json]");
     process.exit(1);
   }
 
   const inputpath = args[0];
   const outputpath = args[1];
-  const filterfile = args[2];
+  const filterfile = args[2] || null;
   console.log("loading game data from " + inputpath);
   const gamefiles = enumerateGamefiles(inputpath);
 
@@ -235,14 +235,19 @@ let runScript = function() {
 
   initializeOutputDirectory(outputpath);
 
-  console.log("loading position filter from " + filterfile);
-  FILTER = initializeJSON(filterfile);
-  Object.keys(FILTER).forEach(function(key) {
-    if (FILTER[key] >= 100000) {
-      delete FILTER[key];
-    }
-  })
-  console.log("Filter has " + Object.keys(FILTER).length + " positions");
+  if (filterfile) {
+    console.log("loading position filter from " + filterfile);
+    FILTER = initializeJSON(filterfile);
+    Object.keys(FILTER).forEach(function(key) {
+      if (FILTER[key] >= 100000) {
+        delete FILTER[key];
+      }
+    })
+    console.log("Filter has " + Object.keys(FILTER).length + " positions");
+  } else {
+    console.log("no filter file provided.")
+    FILTER = null;
+  }
 
   gamefiles.forEach(function(id, idx){ // id = "00/2ae3411265fbd2"
     const filepath = path.join(inputpath, id);
