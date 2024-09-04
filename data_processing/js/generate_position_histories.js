@@ -217,7 +217,7 @@ let processGame = function(gameinfo, gameid, outputdir) {
         */
         let movesfromposition = getPosition(hash, outputdir); 
 
-        if (idx == 0 && gameInPosition(gameid, movesfromposition)) {
+        if (gameInPosition(gameid, movesfromposition)) {
           throw new Error("Game already processed");
         }
 
