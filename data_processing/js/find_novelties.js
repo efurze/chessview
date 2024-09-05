@@ -60,9 +60,9 @@ let processPosition = function(pos) {
   });
 
   // only consider positions that have occured at least 100 times
-  if (occurrances < 100){
-    return;
-  }
+//  if (occurrances < 100){
+  //  return;
+  //}
 
 
   const gamesBefore = {}; // {'1960.??.??': 0} 
@@ -77,16 +77,12 @@ let processPosition = function(pos) {
     // sort so we can find the first one
     games.sort(compareGameDates);
     gamesBefore[games[0]["Date"]] = 0;
-    moveBday[move] = games[0]["Date"];
+    moveBday[move] = games[0];
 
-    console.log(move + " first made " + games[0].Date + " by " + games[0].Black);
+    //console.log(move + " first made " + games[0].Date + " by " + games[0].Black);
 
-    // TODO: make this a merge so I don't have to re-sort below
-    allGames = allGames.concat(games);
+    allGames = merge(allGames, games);
   })
-
-
-  allGames.sort(compareGameDates);
 
   // figure out how many times this position occurred
   // before each novelty
@@ -98,9 +94,11 @@ let processPosition = function(pos) {
     }
   })
 
+  const novelties = [];
+
   moves.forEach(function(move) {
     const noveltyCount = pos.moves[move].length; // number of times this move happened
-    const before = gamesBefore[moveBday[move]];
+    const before = gamesBefore[moveBday[move].Date];
     const after = occurrances - before;
     const moveFreq = noveltyCount/occurrances;
 
@@ -109,19 +107,31 @@ let processPosition = function(pos) {
     // would have happened without it by chance
     noveltyProb = Math.pow(1 - moveFreq, before);
 
-    if (noveltyProb > 0.05) {
+    if (before < 10 || after < 10 || noveltyProb > 0.05) {
       return;
     }
 
     const significance = Math.pow(moveFreq, noveltyCount) * binomial(after, noveltyCount);
-
+    novelties.push({
+      fen: pos.fen,
+      move: move,
+      date: moveBday[move].Date,
+      white: moveBday[move].White,
+      black: moveBday[move].Black,
+      before: before,
+      after: after,
+      sig: significance
+    });
+/*
     console.log(move, "before: " + before,
       "after: " + after,
       "occurrances: " + noveltyCount, 
       "freq: " + noveltyCount/after,
       "prior: " + noveltyProb,
       "significance: " + significance);
+*/
   })
+  return novelties;
 }
 
 function binomial(n, k) {
@@ -141,6 +151,21 @@ function binomial(n, k) {
   return result;
 }
 
+let merge = function(a, b) {
+  let ret = [];
+  while(a.length || b.length) {
+    if (!a[0]) {
+      ret = ret.concat(b.splice(0));
+    } else if (!b[0]) {
+      ret = ret.concat(a.splice(0));
+    } else if (compareGameDates(a[0], b[0]) < 0) {
+      ret.push(a.shift());
+    } else {
+      ret.push(b.shift());
+    }
+  }
+  return ret;
+}
 
 let compareGameDates = function(a, b) {
   const datea = a['Date'].replace(/\?\?/g, "01").replace(/\./g, "");
@@ -191,28 +216,39 @@ const histogram = {
   '50': 0
 };
 
+function saveNovelties(novelties, dir) {
+
+  novelties.forEach(function(novelty) {
+    const filename = crypto.createHash('sha256').update(novelty.fen + novelty.move).digest('hex').slice(0, 16);
+    saveObject(novelty, path.join(dir, filename));
+  })
+}
+
 let GAMEDIR = "";
 
 let runScript = function() {
   const args = process.argv.slice(2); // first 2 args are node and this file
   if (args.length < 2) {
-    console.error("Not enough parameters. USAGE: node find_novelties.js input/ game/ output/");
+    console.error("Not enough parameters. USAGE: node find_novelties.js input/ game/ output.json");
     process.exit(1);
   }
 
   const inputpath = args[0];
   GAMEDIR = args[1];
+  const outdir = args[2];
   const filegenerator = enumerateFiles(inputpath);
 
   let file;
   let count = 0;
   while ((file = filegenerator.next().value) !== undefined) {
-    processPosition(initializeJSON(file));
-    if (count % 1000 == 0){
-
+    const novelties = processPosition(initializeJSON(file));
+    saveNovelties(novelties, outdir);
+    if (count % 100 == 0){
+      console.log("position " + count);
     }
     count++;
   }
+
 }
 
 runScript();
