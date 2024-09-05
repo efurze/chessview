@@ -71,7 +71,9 @@ let processPosition = function(pos) {
   moves.forEach(function(move) {
     // look up all the games move appeared in
     games = pos.moves[move].map(function(id){
-      return loadGame(id);
+      const g = loadGame(id);
+      g.id = id;
+      return g;
     }); 
 
     // sort so we can find the first one
@@ -104,23 +106,23 @@ let processPosition = function(pos) {
 
     // Is this novelty or does our data just not happen to have captured
     // games where it was played? Calculate odds that <before> games
-    // would have happened without it by chance
-    noveltyProb = Math.pow(1 - moveFreq, before);
+    // would have happened without it by chance. Use log-likelihood.
+    // The higher this number is, the less likely this is a true novelty
+    logLikelihood = -1 * before * Math.log2(1 - moveFreq);
 
-    if (before < 10 || after < 10 || noveltyProb > 0.05) {
-      return;
-    }
+    const significance = Math.log2(Math.pow(moveFreq, noveltyCount) * binomial(after, noveltyCount));
 
-    const significance = Math.pow(moveFreq, noveltyCount) * binomial(after, noveltyCount);
     novelties.push({
       fen: pos.fen,
       move: move,
       date: moveBday[move].Date,
       white: moveBday[move].White,
       black: moveBday[move].Black,
+      gameid: moveBday[move].id,
+      count: noveltyCount,
       before: before,
       after: after,
-      sig: significance
+      sig: (significance/logLikelihood)
     });
 /*
     console.log(move, "before: " + before,
