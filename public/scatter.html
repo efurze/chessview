@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+
+<!-- Load d3.js -->
+<script src="https://d3js.org/d3.v4.js"></script>
+
+ <style>
+        /* Styling for the tooltip */
+        .tooltip {
+            position: absolute;
+            background-color: lightgray;
+            padding: 5px;
+            border-radius: 5px;
+            font-size: 12px;
+            pointer-events: none;  /* Prevents blocking of mouse events */
+            visibility: hidden;    /* Hidden by default */
+        }
+    </style>
+
+<!-- Create a div where the graph will take place -->
+<div id="my_dataviz"></div>
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+
+// Tooltip div
+const tooltip = d3.select('#tooltip');
+
+
+// set the dimensions and margins of the graph
+var margin = {top: 10, right: 30, bottom: 30, left: 60},
+    width = window.innerWidth - margin.left - margin.right - 100,
+    height = window.innerHeight - margin.top - margin.bottom - 100;
+
+// append the svg object to the body of the page
+var svg = d3.select("#my_dataviz")
+  .append("svg")
+    .attr("width", width + margin.left + margin.right)
+    .attr("height", height + margin.top + margin.bottom)
+  .append("g")
+    .attr("transform",
+          "translate(" + margin.left + "," + margin.top + ")");
+
+fetch('/data/novelty_data.json')
+    .then(function(res){
+      return res.json();
+    }).then(function(data){
+      renderData(data);
+    }).catch(function(error) {
+      console.log(error);
+    });
+
+let renderData = function(data) {
+
+  function xVal(d) {
+    return Math.log10(d.before);
+  }
+
+  function yVal(d) {
+    return Math.log10(d.count);
+  }
+
+  let maxX = 0, maxY = 0;
+  data.forEach(function(d) {
+    maxX = Math.max(maxX, xVal(d));
+    maxY = Math.max(maxY, yVal(d));
+  })
+
+  // Add X axis
+  var x = d3.scaleLinear()
+    .domain([0, maxX])
+    .range([ 0, width ]);
+  svg.append("g")
+    .attr("transform", "translate(0," + height + ")")
+    .call(d3.axisBottom(x));
+
+  // Add Y axis
+  var y = d3.scaleLinear()
+    .domain([0, maxY])
+    .range([ height, 0]);
+  svg.append("g")
+    .call(d3.axisLeft(y));
+
+
+// Define a color scale
+const colorScale = d3.scaleLinear()
+    .domain([0, 100])  // Domain is the range of your variable
+    .range(['blue', 'red']);  // Colors for the extremes
+
+  
+// Add dots
+svg.append('g')
+  .selectAll("dot")
+  .data(data)
+  .enter()
+  .append("circle")
+    .attr("cx", function (d) { return x(xVal(d)); } )
+    .attr("cy", function (d) { return y(yVal(d)); } )
+    .attr("r", 4)
+    .style("fill", function(d){return colorScale(100*d.count/d.after);})
+  .on('mouseover', (d) => {
+      tooltip.style('visibility', 'visible')  // Show tooltip
+             .style('left', (event.pageX + 10) + 'px')  // Position it next to the mouse
+             .style('top', (event.pageY - 20) + 'px')   // Adjust top for better visibility
+             .html(d.player + " before: " + d.before + " count: " + d.count + " after: " + d.after);  // Display data in the tooltip
+  })
+  .on('mousemove', (event) => {
+      // Update tooltip position as the mouse moves
+      tooltip.style('left', (event.pageX + 10) + 'px')
+             .style('top', (event.pageY - 20) + 'px');
+  })
+  .on('mouseout', () => {
+      // Hide the tooltip when mouse leaves
+      tooltip.style('visibility', 'hidden');
+    });
+
+}
+
+//Read the data
+d3.csv("https://raw.githubusercontent.com/holtzy/data_to_viz/master/Example_dataset/2_TwoNum.csv", function(data) {
+/*
+  // Add X axis
+  var x = d3.scaleLinear()
+    .domain([0, 100])
+    .range([ 0, width ]);
+  svg.append("g")
+    .attr("transform", "translate(0," + height + ")")
+    .call(d3.axisBottom(x));
+
+  // Add Y axis
+  var y = d3.scaleLinear()
+    .domain([0, 20])
+    .range([ height, 0]);
+  svg.append("g")
+    .call(d3.axisLeft(y));
+
+  // Add dots
+  svg.append('g')
+    .selectAll("dot")
+    .data(data)
+    .enter()
+    .append("circle")
+      .attr("cx", function (d) { return x(d.GrLivArea); } )
+      .attr("cy", function (d) { return y(d.SalePrice); } )
+      .attr("r", 1.5)
+      .style("fill", "#69b3a2")
+*/
+})
+
+</script>

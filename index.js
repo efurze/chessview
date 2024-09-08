@@ -24,6 +24,10 @@ app.get('/game', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'game.html'));
 });
 
+app.get('/scatter', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'scatter.html'));
+});
+
 app.use('/public/js/third_party', express.static(__dirname + '/public/js/third_party/'));
 app.use('/data', express.static(__dirname + '/public/data'));
 
