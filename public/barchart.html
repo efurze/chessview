@@ -25,7 +25,7 @@ var svg = d3.select("#my_dataviz")
           "translate(" + margin.left + "," + margin.top + ")");
 
 
- fetch('/data/novelty_data.json')
+ fetch('/data/novelties_middle60.json')
     .then(function(res){
       return res.json();
     }).then(function(data){
@@ -39,8 +39,8 @@ function renderData(data) {
 
   let bins = {};
   data.forEach(function(d) {
-    const pct = Math.floor(d.before/(d.before + d.after));
-    bins[pct] = 1 + bins[pct] ?? 0;
+    let pct = Math.floor(100 * d.before/(d.before + d.after));
+    bins[pct] = (bins[pct] ?? 0) + 1;
   })
 
   data = [];
@@ -73,9 +73,11 @@ function renderData(data) {
     .enter()
     .append("rect")
       .attr("x", function(d) { return x(d.pct); })
-      .attr("y", function(d) { return y(d.count); })
-      .attr("width", 1)
-      .attr("height", function(d) { return height - y(d.Value); })
+      .attr("y", function(d) { 
+        return y(d.count); 
+      })
+      .attr("width", 10)
+      .attr("height", function(d) { return height - y(d.count); })
       .attr("fill", "#69b3a2")
 
 }

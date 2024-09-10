@@ -41,7 +41,7 @@ var svg = d3.select("#my_dataviz")
     .attr("transform",
           "translate(" + margin.left + "," + margin.top + ")");
 
-fetch('/data/novelty_data.json')
+fetch('/data/novelties_middle60.json')
     .then(function(res){
       return res.json();
     }).then(function(data){
