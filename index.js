@@ -16,6 +16,11 @@ app.get('/scatter', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'scatter.html'));
 });
 
+app.get('/bar', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'barchart.html'));
+});
+
+
 app.use('/data', express.static(__dirname + '/public/data'));
 
 

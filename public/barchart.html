@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+
+<!-- Load d3.js -->
+<script src="https://d3js.org/d3.v4.js"></script>
+
+<!-- Create a div where the graph will take place -->
+<div id="my_dataviz"></div>
+
+<script>
+
+
+// set the dimensions and margins of the graph
+var margin = {top: 30, right: 30, bottom: 70, left: 60},
+    width = window.innerWidth - margin.left - margin.right - 100,
+    height = window.innerHeight - margin.top - margin.bottom - 100;
+
+// append the svg object to the body of the page
+var svg = d3.select("#my_dataviz")
+  .append("svg")
+    .attr("width", width + margin.left + margin.right)
+    .attr("height", height + margin.top + margin.bottom)
+  .append("g")
+    .attr("transform",
+          "translate(" + margin.left + "," + margin.top + ")");
+
+
+ fetch('/data/novelty_data.json')
+    .then(function(res){
+      return res.json();
+    }).then(function(data){
+      renderData(data);
+    }).catch(function(error) {
+      console.log(error);
+    });
+
+// Parse the Data
+function renderData(data) {
+
+  let bins = {};
+  data.forEach(function(d) {
+    const pct = Math.floor(d.before/(d.before + d.after));
+    bins[pct] = 1 + bins[pct] ?? 0;
+  })
+
+  data = [];
+  Object.keys(bins).forEach(function(key) {
+  	data.push({pct: key, count: bins[key]});
+  })
+
+  // X axis
+  var x = d3.scaleLinear()
+    .range([ 0, width ])
+    .domain([0, 100])
+ 
+  svg.append("g")
+    .attr("transform", "translate(0," + height + ")")
+    .call(d3.axisBottom(x))
+    .selectAll("text")
+      .attr("transform", "translate(-10,0)rotate(-45)")
+      .style("text-anchor", "end");
+
+  // Add Y axis
+  var y = d3.scaleLinear()
+    .domain([0, 500])
+    .range([ height, 0]);
+  svg.append("g")
+    .call(d3.axisLeft(y));
+
+  // Bars
+  svg.selectAll("mybar")
+    .data(data)
+    .enter()
+    .append("rect")
+      .attr("x", function(d) { return x(d.pct); })
+      .attr("y", function(d) { return y(d.count); })
+      .attr("width", 1)
+      .attr("height", function(d) { return height - y(d.Value); })
+      .attr("fill", "#69b3a2")
+
+}
+
+</script>
