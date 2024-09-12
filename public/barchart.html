@@ -9,6 +9,8 @@
 
 <script>
 
+const url = new URL(window.location.href);
+const file = url.searchParams.get('file');
 
 // set the dimensions and margins of the graph
 var margin = {top: 30, right: 30, bottom: 70, left: 60},
@@ -25,7 +27,7 @@ var svg = d3.select("#my_dataviz")
           "translate(" + margin.left + "," + margin.top + ")");
 
 
- fetch('/data/novelties_middle60.json')
+ fetch('/data/' + file)
     .then(function(res){
       return res.json();
     }).then(function(data){
@@ -37,21 +39,58 @@ var svg = d3.select("#my_dataviz")
 // Parse the Data
 function renderData(data) {
 
+  function xVal(d) {
+    return d.before;
+  }
+
+  function yVal(d) {
+    return (d.count);
+  }
+
   let bins = {};
   data.forEach(function(d) {
-    let pct = Math.floor(100 * d.before/(d.before + d.after));
-    bins[pct] = (bins[pct] ?? 0) + 1;
+    if (d.count == 0) {
+      return;
+    }
+    const freq = d.count/(d.after);
+    if (freq == 0 || freq == 1) {
+      return;
+    }
+    
+    const logOdds = Math.round(-10*(d.before+1) * Math.log2(1-freq))/10;
+    bins[logOdds] = (bins[logOdds] ?? 0) + 1;
+
+
+    // figure out the odds, given the overall freq, that <before> games occurred before observation.
+    // Now figure out how many <before> games would give the same odds for a freq of 1/2
+    // use THAT figure for <before> in the histogram
+    /*
+    const scaledBefore = Math.round(d.before * Math.log2(freq)/Math.log2(0.5));
+    console.log(d.before + "(" + freq +  ") => " + scaledBefore);
+    const before = scaledBefore;// - (d.before % 2);
+    bins[before] = (bins[before] ?? 0) + 1;
+    */
   })
 
   data = [];
   Object.keys(bins).forEach(function(key) {
-  	data.push({pct: key, count: bins[key]});
+    const point = {before: key,
+                  count: bins[key]};
+
+  	data.push(point);
+  })
+
+  // scale the axes
+  let xMax = 0, yMax = 0;
+  data.forEach(function(d) {
+    xMax = Math.max(xMax, xVal(d));
+    yMax = Math.max(yMax, yVal(d));
   })
 
   // X axis
   var x = d3.scaleLinear()
     .range([ 0, width ])
-    .domain([0, 100])
+    .domain([0, 30])
  
   svg.append("g")
     .attr("transform", "translate(0," + height + ")")
@@ -62,8 +101,9 @@ function renderData(data) {
 
   // Add Y axis
   var y = d3.scaleLinear()
-    .domain([0, 500])
+    .domain([0, yMax])
     .range([ height, 0]);
+
   svg.append("g")
     .call(d3.axisLeft(y));
 
@@ -72,12 +112,12 @@ function renderData(data) {
     .data(data)
     .enter()
     .append("rect")
-      .attr("x", function(d) { return x(d.pct); })
+      .attr("x", function(d) { return x(xVal(d)); })
       .attr("y", function(d) { 
-        return y(d.count); 
+        return y(yVal(d)); 
       })
       .attr("width", 10)
-      .attr("height", function(d) { return height - y(d.count); })
+      .attr("height", function(d) { return height - y(yVal(d)); })
       .attr("fill", "#69b3a2")
 
 }

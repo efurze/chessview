@@ -23,6 +23,9 @@
 
 <script>
 
+const url = new URL(window.location.href);
+const file = url.searchParams.get('file');
+
 // Tooltip div
 const tooltip = d3.select('#tooltip');
 
@@ -41,7 +44,7 @@ var svg = d3.select("#my_dataviz")
     .attr("transform",
           "translate(" + margin.left + "," + margin.top + ")");
 
-fetch('/data/novelties_middle60.json')
+fetch('/data/' + file)
     .then(function(res){
       return res.json();
     }).then(function(data){
@@ -53,13 +56,23 @@ fetch('/data/novelties_middle60.json')
 let renderData = function(data) {
 
   function xVal(d) {
-    return Math.log10(d.before);
+    const freq = d.count/(d.before + d.after);
+    return freq;
   }
 
   function yVal(d) {
-    return Math.log10(d.count);
+    if (d.count < 3 || d.after < 3) {
+      return 0;
+    }
+    return d.before;
+
+    const freq = d.count/(d.before + d.after)
+    const logOdds = -(d.before+1) * Math.log2(1-freq);
+    //console.log("logOdds " + logOdds);
+    return logOdds;
   }
 
+  // automatically scale the axes
   let maxX = 0, maxY = 0;
   data.forEach(function(d) {
     maxX = Math.max(maxX, xVal(d));
@@ -68,7 +81,7 @@ let renderData = function(data) {
 
   // Add X axis
   var x = d3.scaleLinear()
-    .domain([0, maxX])
+    .domain([0, 0.30])
     .range([ 0, width ]);
   svg.append("g")
     .attr("transform", "translate(0," + height + ")")
@@ -87,6 +100,29 @@ const colorScale = d3.scaleLinear()
     .domain([0, 100])  // Domain is the range of your variable
     .range(['blue', 'red']);  // Colors for the extremes
 
+function bayesianClassifier(d) {
+  const NOVELTY_PRIOR = 0.5; // what % of 'first moves' are really novelties
+  const NOVELTY_RATE = 0.0001; // every time a position is encountered, what are the odds a novelty is played
+  const freq = d.count/(d.before + d.after);
+  const prob_B = Math.pow(1 - freq, d.count) + 1 - Math.pow(1 - NOVELTY_RATE, d.count);
+  //                           P(A)              *     P(B|A)                / P(B)
+  const knownMovePosterior = 100 * (1 - NOVELTY_PRIOR) * Math.pow(1-freq, d.count) / prob_B;
+  //                           P(A)      *            P(B|A)                         /  P(B)
+  const noveltyPosterior = 100 * NOVELTY_PRIOR * (1 - Math.pow(1 - NOVELTY_RATE, d.count)) / prob_B; 
+
+  return 50 + (noveltyPosterior - knownMovePosterior)/2;
+}
+
+function simpleClassifier(d) {
+  
+  const freq = d.count/(d.before + d.after);
+  const logOdds =  -d.before * Math.log2(1 - freq);
+  
+  // 1/1000 odds = -log2(.001) = 9.96
+  // 1/100 = 6.64
+
+  return 8*logOdds;
+}
   
 // Add dots
 svg.append('g')
@@ -96,13 +132,15 @@ svg.append('g')
   .append("circle")
     .attr("cx", function (d) { return x(xVal(d)); } )
     .attr("cy", function (d) { return y(yVal(d)); } )
-    .attr("r", 4)
-    .style("fill", function(d){return colorScale(100*d.count/d.after);})
+    .attr("r", function(d){ return d.count/d.after * 50;} )
+    .style("fill", function(d){
+      return colorScale(simpleClassifier(d));
+    })
   .on('mouseover', (d) => {
       tooltip.style('visibility', 'visible')  // Show tooltip
              .style('left', (event.pageX + 10) + 'px')  // Position it next to the mouse
              .style('top', (event.pageY - 20) + 'px')   // Adjust top for better visibility
-             .html(d.player + " before: " + d.before + " count: " + d.count + " after: " + d.after);  // Display data in the tooltip
+             .html("odds novel: " + simpleClassifier(d) + " before: " + d.before + " count: " + d.count + " after: " + d.after);  // Display data in the tooltip
   })
   .on('mousemove', (event) => {
       // Update tooltip position as the mouse moves
@@ -115,36 +153,5 @@ svg.append('g')
     });
 
 }
-
-//Read the data
-d3.csv("https://raw.githubusercontent.com/holtzy/data_to_viz/master/Example_dataset/2_TwoNum.csv", function(data) {
-/*
-  // Add X axis
-  var x = d3.scaleLinear()
-    .domain([0, 100])
-    .range([ 0, width ]);
-  svg.append("g")
-    .attr("transform", "translate(0," + height + ")")
-    .call(d3.axisBottom(x));
-
-  // Add Y axis
-  var y = d3.scaleLinear()
-    .domain([0, 20])
-    .range([ height, 0]);
-  svg.append("g")
-    .call(d3.axisLeft(y));
-
-  // Add dots
-  svg.append('g')
-    .selectAll("dot")
-    .data(data)
-    .enter()
-    .append("circle")
-      .attr("cx", function (d) { return x(d.GrLivArea); } )
-      .attr("cy", function (d) { return y(d.SalePrice); } )
-      .attr("r", 1.5)
-      .style("fill", "#69b3a2")
-*/
-})
 
 </script>
