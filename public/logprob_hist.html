@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+
+<!-- Load d3.js -->
+<script src="https://d3js.org/d3.v4.js"></script>
+
+<!-- Create a div where the graph will take place -->
+<div id="my_dataviz"></div>
+
+<script>
+
+const url = new URL(window.location.href);
+const file = url.searchParams.get('file');
+
+// set the dimensions and margins of the graph
+var margin = {top: 30, right: 30, bottom: 70, left: 60},
+    width = window.innerWidth - margin.left - margin.right - 100,
+    height = window.innerHeight - margin.top - margin.bottom - 100;
+
+// append the svg object to the body of the page
+var svg = d3.select("#my_dataviz")
+  .append("svg")
+    .attr("width", width + margin.left + margin.right)
+    .attr("height", height + margin.top + margin.bottom)
+  .append("g")
+    .attr("transform",
+          "translate(" + margin.left + "," + margin.top + ")");
+
+
+ fetch('/data/' + file)
+    .then(function(res){
+      return res.json();
+    }).then(function(data){
+      renderData(data);
+    }).catch(function(error) {
+      console.log(error);
+    });
+
+// Parse the Data
+function renderData(data) {
+
+  function xVal(d) {
+    return d[0];
+  }
+
+  function yVal(d) {
+    return d[1];
+  }
+
+  let bins = {};
+  let noveltyCount = 0;
+  data.forEach(function(d) {
+    if (d.count == 0 || d.before == 0 || d.after == 0) {
+      return;
+    }
+    const freq = d.count/(d.before + d.after);
+    if (freq == 0 || freq == 1) {
+      return;
+    }
+
+    if (isNovelty(d)) {
+      noveltyCount++;
+    }
+
+    const logOdds = Math.round(-d.before * Math.log2(1 - freq));
+    
+    bins[logOdds] = (bins[logOdds] ?? 0) + 1;
+
+  })
+
+  console.log(noveltyCount + " novelties out of " + data.length);
+
+  function isNovelty(d) {
+    const freq = d.count/(d.before + d.after);
+    const postFreq = d.count/d.after;
+    const logOdds =  -d.before * Math.log2(1 - freq);
+
+    return (logOdds > -Math.log2(0.01));
+  }
+
+
+  const histogram = [];
+  Object.keys(bins).forEach(function(key) {
+    const bar = [key, bins[key]];
+
+  	histogram.push(bar);
+  })
+
+  // scale the axes
+  let xMax = 0, yMax = 0;
+  histogram.forEach(function(d) {
+    xMax = Math.max(xMax, xVal(d));
+    yMax = Math.max(yMax, yVal(d));
+  })
+
+  xMax = 70;
+
+  // X axis
+  var x = d3.scaleLinear()
+    .range([ 0, width ])
+    .domain([0, xMax])
+ 
+  svg.append("g")
+    .attr("transform", "translate(0," + height + ")")
+    .call(d3.axisBottom(x))
+    .selectAll("text")
+      .attr("transform", "translate(-10,0)rotate(-45)")
+      .style("text-anchor", "end");
+
+  // Add Y axis
+  var y = d3.scaleLinear()
+    .domain([0, yMax])
+    .range([ height, 0]);
+
+  svg.append("g")
+    .call(d3.axisLeft(y));
+
+  // Bars
+  svg.selectAll("mybar")
+    .data(histogram)
+    .enter()
+    .append("rect")
+      .attr("x", function(d) { return x(xVal(d)); })
+      .attr("y", function(d) { 
+        return y(yVal(d)); 
+      })
+      .attr("width", 10)
+      .attr("height", function(d) { return height - y(yVal(d)); })
+      .attr("fill", "#69b3a2")
+
+}
+
+</script>
