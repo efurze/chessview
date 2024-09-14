@@ -61,7 +61,8 @@ export class CalculateMoveStats {
 		  
 		while ((file = this.fileGenerator.next().value) !== undefined) {
 		    count++;
-		    const position = PositionInfo.fromString(loadFile(file));
+		    const posId = path.basename(path.dirname(file)) + path.basename(file);
+		    const position = PositionInfo.fromString(loadFile(file), posId);
 		    const moves = this.analyzeMovesForPosition(position);
 		    ret = ret.concat(moves);
 		}
@@ -115,7 +116,7 @@ export class CalculateMoveStats {
 		const self = this;
 	  	const history : {[key:string] : string[]} = pos.getHistory();
 	  	const moves = Object.keys(history); // distinct moves for this position
-	  	const moveOccurrences : string[][] = []; // [['nf3', 1960.03.15], ['nf3', 1970.??.??] ... ]
+	  	const moveOccurrences : string[][] = []; // [['nf3', 1960.03.15], ['Qc1', 1970.??.??] ... ]
 
 	  	if (moves.length < 2) {
 	  		// if there's only 1 move that's ever been made then there can't be a novelty
@@ -166,38 +167,64 @@ export class CalculateMoveStats {
 	      	}
 	    	}
 	  	*/
-	  	const pivots : {[key:string]:MoveInfo} = {};
+	  	const moveHistories : {[key:string]:MoveInfo} = {};
+	  	const overCounts : {[key:string]:string[][]} = {}; // {'nf3': [[1960.??.??, 2], [1964.??.??, 0] ... ]}
+
+	  	// moveOccurences: [['nf3', 1960.03.15], ['Qc1', 1970.??.??] ... ]
 	  	moveOccurrences.forEach(function(occurrance : string[], idx:number) { 
 	    	const move : string = occurrance[0]; // 'nf3'
 		    const date : string = occurrance[1];
-	    	const pivot = pivots[move] ?? new MoveInfo(move);
+	    	const moveHistory = moveHistories[move] ?? new MoveInfo(move, date, pos.getFen(), pos.getId());
 
-	    	if (firstMoveDates.length) {
-		    	if (compareDates(date, firstMoveDates[0]) < 0) {
-		    		// this occurance is strictly before the next date of interest
-		    		pivot.addOccurrance();
-		    	} else {
-		    		// this occurance is either strictly after or "at the same time" (i.e. unknown)
-		    		pivot.addDatePivot(firstMoveDates.shift() ?? "");
-		    		pivot.addOccurrance();
-		    	}
-		    } else {
-		    	pivot.addOccurrance();
-		    }
+	    	if (firstMoveDates.length && compareDates(firstMoveDates[0], date) < 0) {
+	    		// the next "Date of interest" occurred strictly after or at the same time as 
+	  			// this occurance of 'move'. 
+	  			const dateOfInterest : string = firstMoveDates.shift() ?? "";
+	    		moveHistory.addDatePivot(dateOfInterest ?? "");
 
-	    	pivots[move] = pivot;
+	    		// we want to figure out how many times 'move' occurred strictly after 'dateOfInterest'
+	    		// so look ahead in moveOccurences and see how many future moves are the same as 'dateOfInterest'
+	    		let ambiguousDateCount = 0;
+	    		let lookAheadIndex = idx+1;
+	    		while(lookAheadIndex < moveOccurrences.length 
+	    				&& compareDates(dateOfInterest, moveOccurrences[lookAheadIndex][1]) == 0) 
+	    		{
+	    			lookAheadIndex++;
+	    			ambiguousDateCount++;
+	    		}
+
+	    		// a naive calculation of 'striclyAfter' for a given date will erroneously include these ambiguous date occurances.
+	    		// This move could've been made either before or after dateOfInterest so let's keep track of how many date collisions
+	    		// happen so we can subtract them at the end.
+	    		overCounts[move] = overCounts[move] ?? []; 
+	    		overCounts[move].push([dateOfInterest, ambiguousDateCount.toString()]);
+	    	}
+
+	    	moveHistory.addOccurrance();
+	    	moveHistories[move] = moveHistory;
 	  	})
 
 	  	// sanity check
 	  	let total=0;
-	  	Object.keys(pivots).forEach(function(move:string) {
-	  		total += pivots[move].getTotal();
+	  	Object.keys(moveHistories).forEach(function(move:string) {
+	  		total += moveHistories[move].getTotal();
 	  	})
 	  	if (total != moveOccurrences.length) {
 	  		throw "move totals don't match";
 	  	}
 
-	  	return Object.keys(pivots).map(key=>pivots[key]);
+	  	// now calculate the strictlyAfter values
+	  	Object.keys(overCounts).forEach(function(move : string) {
+	  		const moveInfo = moveHistories[move];
+	  		overCounts[move].forEach(function(oc : string[]) {
+	  			const date = oc[0];
+	  			const over = Number(oc[1]);
+	  			const before = moveInfo.getBeforeCount(date);
+	  			moveInfo.setAfter(date, moveInfo.getTotal() - before - over);
+	  		})
+	  	})
+
+	  	return Object.keys(moveHistories).map(key=>moveHistories[key]);
 
 	} // analyzeMovesForPosition
  
@@ -207,11 +234,17 @@ export class CalculateMoveStats {
 
 export class MoveInfo {
 	private total : number = 0;
-	private byDate : {[key:string]:number} = {};
+	private firstPlayed : string = ""; // date move was first played
+	private byDate : {[key:string]: {strictlyBefore : number, strictlyAfter : number}} = {};
 	private move : string;
+	private fen : string;
+	private posId : string;
 
-	public constructor(move : string) {
+	public constructor(move : string, dateFirstPlayed : string, fen:string="", posId:string="") {
 		this.move = move;
+		this.firstPlayed = dateFirstPlayed;
+		this.fen = fen;
+		this.posId = posId;
 	}
 
 	public addOccurrance() : void {
@@ -223,7 +256,22 @@ export class MoveInfo {
 	}
 
 	public addDatePivot(date : string) : void {
-		this.byDate[date] = this.total;
+		this.byDate[date] = {
+			strictlyBefore: this.total,
+			strictlyAfter: -1
+		};
+	}
+
+	public addDatePivotAfterCount(date : string, after : number) : void {
+		this.byDate[date].strictlyAfter = this.total;
+	}
+
+	public getBeforeCount(date : string) : number {
+		return this.byDate[date] ? this.byDate[date].strictlyBefore : 0;
+	}
+
+	public setAfter(date:string, count:number) : void {
+		this.byDate[date].strictlyAfter = count;
 	}
 }
 
@@ -249,12 +297,18 @@ class GameInfo {
 }
 
 class PositionInfo {
+	private fen : string;
 	private id : string;
 	private history : {[key:string] : string[]}; // {'nf3' : [gameid, gameid ...], 'e4':[], ...}
 
-	public constructor(id:string, history:{[key:string] : string[]}) {
+	public constructor(fen:string, history:{[key:string] : string[]}, id:string="") {
+		this.fen = fen;
 		this.id = id;
 		this.history = history;
+	}
+
+	public getFen() : string {
+		return this.fen;
 	}
 
 	public getId() : string {
@@ -278,9 +332,9 @@ class PositionInfo {
 		return JSON.stringify(obj);
 	}
 
-	public static fromString(data : string) : PositionInfo {
+	public static fromString(data : string, posId:string="") : PositionInfo {
 		const obj = JSON.parse(data);
-		return new PositionInfo(obj.fen, obj.moves);
+		return new PositionInfo(obj.fen, obj.moves, posId);
 	}
 }
 
