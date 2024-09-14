@@ -32,10 +32,10 @@ function compareDates(a : string, b : string) : number {
   	if (aparts[0] !== bparts[0]) {
   		// year
   		return Number(aparts[0]) - Number(bparts[0]);
-  	} else if (Number.isInteger(aparts[1]) && Number.isInteger(bparts[1])
+  	} else if (!isNaN(Number(aparts[1])) && !isNaN(Number(bparts[1]))
   				&& aparts[1] !== bparts[1]) {
   		return Number(aparts[1]) - Number(bparts[1]);
-  	} else if (Number.isInteger(aparts[2]) && Number.isInteger(bparts[2])) {
+  	} else if (!isNaN(Number(aparts[2])) && !isNaN(Number(bparts[2]))) {
   		return Number(aparts[2]) - Number(bparts[2]);
   	} else {
   		return 0;
@@ -159,7 +159,7 @@ export class CalculateMoveStats {
 	  	const moveHistories : {[key:string]:MoveInfo} = {}; // {'nf3' : <MoveInfo>}
 
 	  	// moveOccurences: [['nf3', gameId], ['Qc1', gameId] ... ]
-	  	// Sorted by date. Go forward through time and keep running totals for each move
+	  	// Go forward through time and keep running totals for each move
 	  	moveOccurrences.forEach(function(occurrance : string[], idx:number) { 
 	    	const move : string = occurrance[0]; // 'nf3'
 		    const date : string = getMoveDate(occurrance);
@@ -211,6 +211,7 @@ export class CalculateMoveStats {
 	    			lookAheadIndex ++;
 	    			ambiguousDateCountAfter ++;
 	    		}
+
 
 	    		moveHistory = new MoveInfo(move, 
 					    		date,
@@ -302,16 +303,24 @@ export class MoveInfo {
 		return this.byDate[date] ? this.byDate[date].strictlyBefore : 0;
 	}
 
-	public setAfter(date:string, count:number) : void {
-		this.byDate[date].strictlyAfter = count;
-	}
-
 	public getStrictlyBefore():number {
 		return this.strictlyBefore;
 	}
 
 	public getStrictlyAfter():number {
 		return this.strictlyAfter;
+	}
+
+	public getPivots():string[] {
+		return Object.keys(this.byDate);
+	}
+
+	public getPivotBefore(date:string):number{
+		return this.byDate[date].strictlyBefore;
+	}
+
+	public getPivotAfter(date:string):number{
+		return this.byDate[date].strictlyAfter;
 	}
 
 	public sanityCheck() : void {
@@ -391,4 +400,4 @@ class PositionInfo {
 
 const moveFinder = new CalculateMoveStats("./test");
 const moves = moveFinder.getStats();
-console.log(JSON.stringify(moves, null, " "));
+//console.log(JSON.stringify(moves, null, " "));
