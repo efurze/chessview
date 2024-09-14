@@ -155,85 +155,73 @@ export class CalculateMoveStats {
 	  	// moveOccurrences is now an in-date-order list of every move ever made in position
 	  	moveOccurrences.sort(function(a, b){return compareDates(getMoveDate(a), getMoveDate(b));});
 
-	  	let novelties : {[key:string] : boolean} = {}; // hash of all unique moves, e.g. 'nf3'
-	  	const noveltyDates : {[key:string] : boolean} = {}; // hash of all 'first move' dates
-	  	moveOccurrences.forEach(function(occurrance : string[]) { // ['nf3' , 1960.01.01]
-		    const move = occurrance[0]; // 'nf3'
-		    const date = getMoveDate(occurrance);
-		    if (!novelties[move]) {
-		      novelties[move] = true;
-		      noveltyDates[date] = true;
-		    }
-	  	})
 
-	  	const firstMoveDates = Object.keys(noveltyDates).sort(compareDates);
-	  	novelties = {};
-	  	/*
-	    	moveHistories:{
-	      	'nf3': {
-	        	total:
-	        	byDate: {
-	          	'1947.03.24': 12,   // number of times move was made (strictly) before given date
-	          	'1950.??.??' : 17
-	        	}
-	      	}
-	    	}
-	  	*/
-	  	const moveHistories : {[key:string]:MoveInfo} = {};
-	  	const overCounts : {[key:string]:string[][]} = {}; // {'nf3': [[1960.??.??, 2], [1964.??.??, 0] ... ]}
+	  	const moveHistories : {[key:string]:MoveInfo} = {}; // {'nf3' : <MoveInfo>}
 
-	  	// moveOccurences: [['nf3', 1960.03.15], ['Qc1', 1970.??.??] ... ]
+	  	// moveOccurences: [['nf3', gameId], ['Qc1', gameId] ... ]
+	  	// Sorted by date. Go forward through time and keep running totals for each move
 	  	moveOccurrences.forEach(function(occurrance : string[], idx:number) { 
 	    	const move : string = occurrance[0]; // 'nf3'
 		    const date : string = getMoveDate(occurrance);
 		    const gameInfo : GameInfo = getGameInfo(occurrance);
-	    	const moveHistory = moveHistories[move] 
-	    		?? new MoveInfo(move,					// first time we're seeing this move 
-					    		date,
-					    		gameInfo.get("id"),
-					    		gameInfo.get("White"),
-					    		gameInfo.get("Black"), 
-					    		pos.getFen(), 
-					    		pos.getId());
+		    let moveHistory : MoveInfo;
 
-	    	// we want to know how many moves were made strictly before this one, which is idx
-	    	// minus any moveOccurrences that happened on the same date
-	    	let lookBehindIndex = idx-1;
-	    	let ambiguousDateCount = 0;
-	    	while(lookBehindIndex > 0 && compareDates(date, getMoveDate(moveOccurrences[lookBehindIndex])) == 0) {
-	    		// in most cases we'll never get here
-	    		lookBehindIndex --;
-	    		ambiguousDateCount ++;
-	    	}
-	    	moveHistory.setStrictlyBefore(idx - 1 - ambiguousDateCount);
+	    	if (move in moveHistories) {
+	    		moveHistory = moveHistories[move];
+	    	} else {
+	    		// this is the first time we're seeing this move
 
-	    	if (firstMoveDates.length && compareDates(firstMoveDates[0], date) < 0) {
-	    		// the next "Date of interest" occurred strictly after or at the same time as 
-	  			// this occurance of 'move'. 
-	  			const dateOfInterest : string = firstMoveDates.shift() ?? "";
-	    		moveHistory.addDatePivot(dateOfInterest ?? "");
+	    		// create a date pivot for every previously encountered move
+	    		// IMPORTANT: these values have to be adjusted below for ambiguous dates.
+	    		// If an existing move has a total which includes a game played on the same date
+	    		// as the current move, then that game shouldn't be included in <strictlyBefore>
+	    		Object.keys(moveHistories).forEach(function(move:string) {
+	    			moveHistories[move].addDatePivot(date);
+	    		})
 
-	    		// we want to figure out how many times 'move' occurred strictly after 'dateOfInterest'
-	    		// but we don't want to count games that occurred on the same date as dateOfInterest
-	    		// so look ahead in moveOccurences and see how many future moves are the same as 'dateOfInterest'
-	    		ambiguousDateCount = 0;
+	    		// we want to know how many moves were made strictly before this one, which is idx
+		    	// minus any moveOccurrences that happened on the same date
+		    	let lookBehindIndex = idx-1;
+		    	let ambiguousDateCountBefore = 0;
+		    	while(lookBehindIndex > 0 && compareDates(date, getMoveDate(moveOccurrences[lookBehindIndex])) == 0) {
+		    		// walk back through history and adjust any overcounts made by games recorded on the same date
+		    		// in most cases we'll never get here
+
+		    		// adjust the 'strictlyBefore' value for the moveHistory for a previously seen move
+		    		// this fixes the value created in the addDatePivot above
+		    		moveHistories[moveOccurrences[lookBehindIndex][0]].decrementBeforeForDate(date);
+
+		    		lookBehindIndex --;
+		    		ambiguousDateCountBefore ++;
+		    	}
+
+		    	// we also want to figure out how many moves occurred strictly after this one
+	    		// but we don't want to count games that occurred on the same date
+	    		// so look ahead in moveOccurences and see how many future moves are the same as 'date'
+	    		let ambiguousDateCountAfter = 0;
 	    		let lookAheadIndex = idx+1;
 	    		while(lookAheadIndex < moveOccurrences.length 
-	    				&& compareDates(dateOfInterest, getMoveDate(moveOccurrences[lookAheadIndex])) == 0) 
+	    				&& compareDates(date, getMoveDate(moveOccurrences[lookAheadIndex])) == 0) 
 	    		{
-	    			lookAheadIndex++;
-	    			ambiguousDateCount++;
+		    		// adjust the 'strictlyAefore' value for the moveHistory for a previously seen move
+		    		// this fixes the value created in the addDatePivot above. This will create negative
+		    		// values for 'strictlyAfter' that will only be accurate after the entire history is processed
+		    		moveHistories[moveOccurrences[lookAheadIndex][0]].decrementAfterForDate(date);
+		    		
+	    			lookAheadIndex ++;
+	    			ambiguousDateCountAfter ++;
 	    		}
 
-	    		// a naive calculation of 'striclyAfter' for a given date will erroneously include these ambiguous date occurances.
-	    		// This move could've been made either before or after dateOfInterest so let's keep track of how many date collisions
-	    		// happen so we can subtract them at the end.
-	    		overCounts[move] = overCounts[move] ?? []; 
-	    		overCounts[move].push([dateOfInterest, ambiguousDateCount.toString()]);
+	    		moveHistory = new MoveInfo(move, 
+					    		date,
+					    		gameInfo.get("id"),
+					    		idx - ambiguousDateCountBefore,
+					    		moveOccurrences.length - idx - 1 - ambiguousDateCountAfter,
+					    		pos.getFen(), 
+					    		pos.getId());
 	    	}
 
 	    	moveHistory.addOccurrance();
-	    	moveHistory.setStrictlyAfter(moveOccurrences.length - idx - 1 - ambiguousDateCount);
 	    	moveHistories[move] = moveHistory;
 	  	})
 
@@ -247,17 +235,6 @@ export class CalculateMoveStats {
 	  		throw new Error("Move totals don't match");
 	  	}
 
-	  	// now calculate the strictlyAfter values
-	  	Object.keys(overCounts).forEach(function(move : string) {
-	  		const moveInfo = moveHistories[move];
-	  		overCounts[move].forEach(function(oc : string[]) {
-	  			const date = oc[0];
-	  			const over = Number(oc[1]);
-	  			const before = moveInfo.getBeforeCount(date);
-	  			moveInfo.setAfter(date, moveInfo.getTotal() - before - over);
-	  		})
-	  	})
-
 	  	return Object.keys(moveHistories).map(key=>moveHistories[key]);
 
 	} // analyzeMovesForPosition
@@ -268,44 +245,57 @@ export class CalculateMoveStats {
 
 export class MoveInfo {
 	private total : number = 0;
-	private strictlyBefore : number = 0;
-	private strictlyAfter : number = 0;
+	private strictlyBefore : number = 0; // number of times ANY move occurred strictly before firstPlayed
+	private strictlyAfter : number = 0;  // ditto above for after.
 	private firstPlayed : string = ""; // date move was first played
 	private gameId : string = ""; // gameId of first appearance
-	private white: string = "";
-	private black: string = "";
-	private byDate : {[key:string]: {strictlyBefore : number, strictlyAfter : number}} = {};
+	private byDate : {[key:string]: {
+		strictlyBefore : number, 		// number of times THIS MOVE was played strictly before date key
+		strictlyAfter : number}} = {};
 	private move : string;
 	private fen : string;
 	private posId : string;
 
-	public constructor(move : string, dateFirstPlayed : string, gameId:string, white:string, black:string, fen:string="", posId:string="") {
+	public constructor(move : string, dateFirstPlayed : string, gameId:string, before:number, after:number, fen:string="", posId:string="") {
 		this.move = move;
 		this.firstPlayed = dateFirstPlayed;
 		this.gameId = gameId;
-		this.white = white;
-		this.black = black;
+		this.strictlyBefore = before;
+		this.strictlyAfter = after;
 		this.fen = fen;
 		this.posId = posId;
 	}
 
 	public addOccurrance() : void {
-		this.total ++;
+		const self = this;
+		self.total ++;
+		// update the pivots
+		Object.keys(self.byDate).forEach(function(date:string) {
+			self.byDate[date].strictlyAfter ++;
+		})
 	}
 
 	public getTotal() : number {
 		return this.total;
 	}
 
+	public getMove() : string {
+		return this.move;
+	}
+
 	public addDatePivot(date : string) : void {
 		this.byDate[date] = {
 			strictlyBefore: this.total,
-			strictlyAfter: -1
+			strictlyAfter: 0
 		};
 	}
 
-	public addDatePivotAfterCount(date : string, after : number) : void {
-		this.byDate[date].strictlyAfter = this.total;
+	public decrementBeforeForDate(date: string) : void {
+		this.byDate[date].strictlyBefore --;
+	}
+
+	public decrementAfterForDate(date: string) : void {
+		this.byDate[date].strictlyAfter --;
 	}
 
 	public getBeforeCount(date : string) : number {
@@ -314,14 +304,6 @@ export class MoveInfo {
 
 	public setAfter(date:string, count:number) : void {
 		this.byDate[date].strictlyAfter = count;
-	}
-
-	public setStrictlyBefore(count:number):void {
-		this.strictlyBefore = count;
-	}
-
-	public setStrictlyAfter(count:number):void {
-		this.strictlyAfter = count;
 	}
 
 	public getStrictlyBefore():number {
@@ -336,11 +318,10 @@ export class MoveInfo {
 		const self = this;
 		let count = 0;
 		Object.keys(self.byDate).forEach(function(date:string) {
-			count += self.byDate[date].strictlyBefore + self.byDate[date].strictlyAfter;
+			if ((self.byDate[date].strictlyBefore + self.byDate[date].strictlyAfter) > self.total) {
+				throw new Error("Move counts don't add up for " + JSON.stringify(self.byDate[date]) + "   total = " + self.total);	
+			}
 		})
-		if (count > self.total) {
-			throw new Error("Move counts don't add up for " + JSON.stringify(this));
-		}
 	}
 }
 
