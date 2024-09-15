@@ -69,29 +69,21 @@ export class CalculateMoveStats {
 		return "";
 	}
 
-	/*
+/*
 
-  This returns all unique moves in a position with associated data.
+  This returns all unique moves in a position and calculates various metadata for it.
 
-  returns:
-  [
-    fen:    string
-    move:   'nf3'
-    date:   string 
-    gameid: string
-    white:  player name
-    black:  player name
-    count:  number of times this move has been made
-    strictlyBefore: number of moves in position before this move first occurred
-    strictlyAfter:
+  This sorts all moves made by date, then step forward through time. For each move it calculates how many times it occurred,
+  how many times the position was played before the move, and how many times the position occured after. We also want to know how the
+  frequencies of other moves changed with the advent of a given move, and that's what all the 'pivot' business is about. Each 'first move'
+  defineds a pivot date which we want to record the occurences of all other moves relative to. Pivots will only exist for new moves
+  which happen after a move-to-pivot, so the last new move in this position will have no pivots. The final complexity is that many
+  dates are ambiguous (e.g. "1960.??.??") so we only record something as before or after a pivot if it's strictly before or after: if a
+  pivot date is 1955.??.?? and we have a different move that happened on 1955.02.03 then we can't know if it was before or after the pivot so
+  we ignore it. That's what all the lookahead and lookbehind stuff is for.
 
-    pivots: {
-      '1985.??.??': {
-        strictlyBefore: number of times THIS MOVE was made strictly before key date
-        strictlyAfter:
-      }
-    }
-  ]
+  The output of this function should be passed to filterMoves() to properly collate all the pivot info.
+
 */
 	public analyzeMovesForPosition (pos : PositionInfo) : MoveInfo[] {
 		const self = this;
@@ -184,10 +176,14 @@ export class CalculateMoveStats {
 	    		while(lookAheadIndex < moveOccurrences.length 
 	    				&& compareDates(date, getMoveDate(moveOccurrences[lookAheadIndex])) == 0) 
 	    		{
-		    		// adjust the 'strictlyAefore' value for the moveHistory for a previously seen move
-		    		// this fixes the value created in the addDatePivot above. This will create negative
+		    		// adjust the 'strictlyAfter' value for the moveHistory for a previously seen move.
+		    		// This fixes the value created in the addDatePivot above. This will create negative
 		    		// values for 'strictlyAfter' that will only be accurate after the entire history is processed
-		    		moveHistories[moveOccurrences[lookAheadIndex][0]].decrementAfterForDate(date);
+		    		const previouslySeenMove = moveHistories[moveOccurrences[lookAheadIndex][0]];
+		    		if (previouslySeenMove) {
+		    			// if our lookahead move is a move we haven't seen before then it won't be in moveHistories
+			    		previouslySeenMove.decrementAfterForDate(date);
+			    	}
 		    		
 	    			lookAheadIndex ++;
 	    			ambiguousDateCountAfter ++;
@@ -493,7 +489,7 @@ if (process.argv[1].endsWith("CalculateMoveStats.js")) { // we don't want to run
 
 	const args = process.argv.slice(2); // first 2 args are node and this file
 	if (args.length < 2) {
-	    console.error("Not enough parameters. USAGE: node CalculateMoveState.js path/to/games/ path/to/positions");
+	    console.error("Not enough parameters. USAGE: node CalculateMoveState.js path/to/games/ path/to/positions > output.json");
 	    process.exit(1);
 	}
 
