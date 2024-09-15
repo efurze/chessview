@@ -240,11 +240,9 @@ export class CalculateMoveStats {
 		})
 
 		filtered.forEach(function(moveInfo:MoveInfo) {
-			console.log("building move freqs for " + moveInfo.getMove());
 			const otherFreq : {[key:string]: {strictlyBefore:number, strictlyAfter:number}} = {};
 			const date = moveInfo.getDate();
 			moveInfo.getKnownMoves().forEach(function(move:string) {
-				console.log("alternate line " + move);
 				moveInfo.setBeforeForMove(move, hash[move].getPivotBefore(date));
 				moveInfo.setAfterForMove(move, hash[move].getPivotAfter(date));
 			})
@@ -268,7 +266,7 @@ export class MoveInfo {
 		strictlyBefore : number, 		// number of times THIS MOVE was played strictly before date key
 		strictlyAfter : number}} = {};
 	// how the counts of the other lines changes after this move came around:
-	private otherLines : {[key:string]: {strictlyBefore:number, strictlyAfter:number}} = {}; // before and after refer to the date this move was invented
+	private otherLines : {[key:string]: {before:number, after:number}} = {}; // before and after refer to the date this move was invented
 	private move : string;
 	private white : string;
 	private black : string;
@@ -289,18 +287,33 @@ export class MoveInfo {
 		this.posId = posId;
 	}
 
+	public toString() : string {
+		return `{
+			fen: ${this.fen},
+			move: ${this.move},
+			date: ${this.firstPlayed},
+			white: ${this.white},
+			black: ${this.black},
+			gameId: ${this.gameId},
+			before: ${this.strictlyBefore},
+			after: ${this.strictlyAfter},
+			posId: ${this.posId},
+			otherMoves: ${JSON.stringify(this.otherLines)}
+		}`.replace(/\t/g, "").replace(/\n/g, "").replace(/\"/g, "");
+	}
+
 	public getKnownMoves() : string[] {
 		return this.knownMoves;
 	}
 
 	public setBeforeForMove(move:string, count:number):void {
 		this.otherLines[move] = this.otherLines[move] ?? {};
-		this.otherLines[move].strictlyBefore = count;
+		this.otherLines[move].before = count;
 	}
 
 	public setAfterForMove(move:string, count:number):void {
 		this.otherLines[move] = this.otherLines[move] ?? {};
-		this.otherLines[move].strictlyAfter = count;
+		this.otherLines[move].after = count;
 	}
 
 	public addOccurrance() : void {
@@ -451,8 +464,7 @@ function runScript(gamespath:string, positionspath:string) : MoveInfo[] {
 
   	const moveFinder = new CalculateMoveStats(gamespath);
   	const fileGenerator = moveFinder.enumerateFiles(positionspath);
-  	console.log("analyzing positions");
-	  
+
 	while ((file = fileGenerator.next().value) !== undefined) {
 	    count++;
 	    const posId = path.basename(path.dirname(file)) + path.basename(file);
@@ -467,7 +479,7 @@ function runScript(gamespath:string, positionspath:string) : MoveInfo[] {
 	    ret = ret.concat(novelties);
 
 	    if (count % 10 == 0) {
-	    	console.log("Analyzed " + count + " positions, found " + ret.length + " interesting moves so far");
+	    	console.error("Analyzed " + count + " positions, found " + ret.length + " interesting moves so far");
 	    }
 	}
 
@@ -477,14 +489,14 @@ function runScript(gamespath:string, positionspath:string) : MoveInfo[] {
 
 
 if (process.argv[1].endsWith("CalculateMoveStats.js")) { // we don't want to run the script if we're being unit tested
-	console.log("starting");
+	console.error("starting");
 
 	const args = process.argv.slice(2); // first 2 args are node and this file
 	if (args.length < 2) {
-	    console.log("Not enough parameters. USAGE: node CalculateMoveState.js path/to/games/ path/to/positions");
+	    console.error("Not enough parameters. USAGE: node CalculateMoveState.js path/to/games/ path/to/positions");
 	    process.exit(1);
 	}
 
-	const moves = runScript(args[0], args[1]);
+	const moves = runScript(args[0], args[1]).map(function(move:MoveInfo){return move.toString();});
 	console.log(JSON.stringify(moves, null, " "));
 }
