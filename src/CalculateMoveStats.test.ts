@@ -6,7 +6,7 @@ describe('Basic', () => {
     let moveHash : {[key:string] : MoveInfo} = {};
 
     it('should process a position', () => {
-        const moveFinder = new CalculateMoveStats("./test");
+        const moveFinder = new CalculateMoveStats("../data/2400caissabase/games");
         const fileGenerator = moveFinder.enumerateFiles(path.join("./test", "positions"));
         const file = fileGenerator.next().value;
         const posId = path.basename(path.dirname(file)) + path.basename(file);

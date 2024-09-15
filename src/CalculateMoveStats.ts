@@ -36,14 +36,14 @@ function compareDates(a : string, b : string) : number {
 
 export class CalculateMoveStats {
 
-	private baseDir : string;
+	private gamesDir : string;
 
-	public constructor(dirpath : string){
-		this.baseDir = dirpath;
+	public constructor(gamespath : string){
+		this.gamesDir = gamespath;
 	}
 
 	private loadGame (gameid : string) : GameInfo { // hash
-	  const filepath = path.join(this.baseDir, "games", gameid.slice(0,2) + path.sep + gameid.slice(2));
+	  const filepath = path.join(this.gamesDir, gameid.slice(0,2) + path.sep + gameid.slice(2));
 	  return new GameInfo(this.loadFile(filepath));
 	}
 
@@ -64,7 +64,7 @@ export class CalculateMoveStats {
 			const data = fs.readFileSync(filename, 'utf8');
 			return data.toString();
 		} catch (e) {
-			//console.log("JSON file not read: " + e.toString());
+			console.log("JSON file not read: " + filename);
 		}
 		return "";
 	}
@@ -435,28 +435,29 @@ export class PositionInfo {
 
 
 
-function runScript(dirpath:string) : MoveInfo[] {
+function runScript(gamespath:string, positionspath:string) : MoveInfo[] {
 	let file;
   	let count = 0;
   	let ret : MoveInfo[] = [];
 
-  	const moveFinder = new CalculateMoveStats(dirpath);
-  	const fileGenerator = moveFinder.enumerateFiles(path.join(dirpath, "positions"));
+  	const moveFinder = new CalculateMoveStats(gamespath);
+  	const fileGenerator = moveFinder.enumerateFiles(positionspath);
   	console.log("analyzing positions");
 	  
 	while ((file = fileGenerator.next().value) !== undefined) {
 	    count++;
 	    const posId = path.basename(path.dirname(file)) + path.basename(file);
-	    console.log("Analyzing position id " + posId);
+	    //console.log("Analyzing position id " + posId);
 	    const position = PositionInfo.fromString(moveFinder.loadFile(file), posId);
 	    const moves = moveFinder.analyzeMovesForPosition(position);
+	    //console.log(JSON.stringify(moves, null, " "));
 	    const novelties = moveFinder.filterMoves(moves);
-	    if (novelties.length) {
-	    	console.log(JSON.stringify(novelties, null, ""));
-	    }
+	    //if (novelties.length) {
+	    //	console.log(JSON.stringify(novelties, null, ""));
+	    //}
 	    ret = ret.concat(novelties);
 
-	    if (count % 1 == 0) {
+	    if (count % 10 == 0) {
 	    	console.log("Analyzed " + count + " positions, found " + ret.length + " interesting moves so far");
 	    }
 	}
@@ -466,6 +467,15 @@ function runScript(dirpath:string) : MoveInfo[] {
 
 
 
-console.log("starting");
-const moves = runScript("./test");
-console.log(JSON.stringify(moves, null, " "));
+if (process.argv[1].endsWith("CalculateMoveStats.js")) { // we don't want to run the script if we're being unit tested
+	console.log("starting");
+
+	const args = process.argv.slice(2); // first 2 args are node and this file
+	if (args.length < 2) {
+	    console.log("Not enough parameters. USAGE: node CalculateMoveState.js path/to/games/ path/to/positions");
+	    process.exit(1);
+	}
+
+	const moves = runScript(args[0], args[1]);
+	console.log(JSON.stringify(moves, null, " "));
+}
