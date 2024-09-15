@@ -151,7 +151,6 @@ export class CalculateMoveStats {
 	    		moveHistory = moveHistories[move];
 	    	} else {
 	    		// this is the first time we're seeing this move
-	    		knownMoves.push(move);
 
 	    		// create a date pivot for every previously encountered move
 	    		// IMPORTANT: these values have to be adjusted below for ambiguous dates.
@@ -200,9 +199,13 @@ export class CalculateMoveStats {
 					    		gameInfo.get("id"),
 					    		idx - ambiguousDateCountBefore,
 					    		moveOccurrences.length - idx - 1 - ambiguousDateCountAfter,
-					    		knownMoves,
+					    		JSON.parse(JSON.stringify(knownMoves)),
+					    		gameInfo.get("White"),
+					    		gameInfo.get("Black"),
 					    		pos.getFen(), 
 					    		pos.getId());
+
+	    		knownMoves.push(move);
 	    	}
 
 	    	moveHistory.addOccurrance();
@@ -237,9 +240,11 @@ export class CalculateMoveStats {
 		})
 
 		filtered.forEach(function(moveInfo:MoveInfo) {
+			console.log("building move freqs for " + moveInfo.getMove());
 			const otherFreq : {[key:string]: {strictlyBefore:number, strictlyAfter:number}} = {};
 			const date = moveInfo.getDate();
 			moveInfo.getKnownMoves().forEach(function(move:string) {
+				console.log("alternate line " + move);
 				moveInfo.setBeforeForMove(move, hash[move].getPivotBefore(date));
 				moveInfo.setAfterForMove(move, hash[move].getPivotAfter(date));
 			})
@@ -265,17 +270,21 @@ export class MoveInfo {
 	// how the counts of the other lines changes after this move came around:
 	private otherLines : {[key:string]: {strictlyBefore:number, strictlyAfter:number}} = {}; // before and after refer to the date this move was invented
 	private move : string;
+	private white : string;
+	private black : string;
 	private fen : string;
 	private posId : string;
 
 	public constructor(move : string, dateFirstPlayed : string, gameId:string, before:number, after:number, 
-						knownMoves : string[], fen:string="", posId:string="") {
+						knownMoves : string[], white:string, black:string, fen:string="", posId:string="") {
 		this.move = move;
 		this.firstPlayed = dateFirstPlayed;
 		this.gameId = gameId;
 		this.strictlyBefore = before;
 		this.strictlyAfter = after;
 		this.knownMoves = knownMoves;
+		this.white = white;
+		this.black = black;
 		this.fen = fen;
 		this.posId = posId;
 	}
