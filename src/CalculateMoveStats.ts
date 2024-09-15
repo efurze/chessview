@@ -4,16 +4,6 @@ const path = require('path');
 const crypto = require('crypto');
 
 
-function loadFile(filename:string) : string {
-  // Load the object from the JSON file
-  try {
-    const data = fs.readFileSync(filename, 'utf8');
-    return data.toString();
-  } catch (e) {
-    //console.log("JSON file not read: " + e.toString());
-  }
-  return "";
-}
 
 function saveObject(obj : any, filename : string) : void {
   try {
@@ -46,44 +36,37 @@ function compareDates(a : string, b : string) : number {
 
 export class CalculateMoveStats {
 
-	private fileGenerator : Generator<string>;
 	private baseDir : string;
 
 	public constructor(dirpath : string){
 		this.baseDir = dirpath;
-		this.fileGenerator = this.enumerateFiles(path.join(dirpath, "positions"));
-	}
-
-	public getStats() : MoveInfo[] {
-		let file;
-	  	let count = 0;
-	  	let ret : MoveInfo[] = [];
-		  
-		while ((file = this.fileGenerator.next().value) !== undefined) {
-		    count++;
-		    const posId = path.basename(path.dirname(file)) + path.basename(file);
-		    const position = PositionInfo.fromString(loadFile(file), posId);
-		    const moves = this.analyzeMovesForPosition(position);
-		    ret = ret.concat(moves);
-		}
-
-		return ret;
-	}
-
-	* enumerateFiles(dir : string) : Generator<string> {
-	  for (const entry of fs.readdirSync(dir)) {
-	    const fullPath = path.join(dir, entry);
-	    if (fs.statSync(fullPath).isDirectory()) {
-	      yield* this.enumerateFiles(fullPath);
-	    } else {
-	      yield fullPath;
-	    }
-	  }
 	}
 
 	private loadGame (gameid : string) : GameInfo { // hash
 	  const filepath = path.join(this.baseDir, "games", gameid.slice(0,2) + path.sep + gameid.slice(2));
-	  return new GameInfo(loadFile(filepath));
+	  return new GameInfo(this.loadFile(filepath));
+	}
+
+	public *enumerateFiles(dir : string) : Generator<string> {
+		for (const entry of fs.readdirSync(dir)) {
+			const fullPath = path.join(dir, entry);
+			if (fs.statSync(fullPath).isDirectory()) {
+			  yield* this.enumerateFiles(fullPath);
+			} else {
+			  yield fullPath;
+			}
+		}
+	}
+
+	public loadFile(filename:string) : string {
+		// Load the object from the JSON file
+		try {
+			const data = fs.readFileSync(filename, 'utf8');
+			return data.toString();
+		} catch (e) {
+			//console.log("JSON file not read: " + e.toString());
+		}
+		return "";
 	}
 
 	/*
@@ -99,20 +82,18 @@ export class CalculateMoveStats {
     white:  player name
     black:  player name
     count:  number of times this move has been made
-    strictlyBefore:
+    strictlyBefore: number of moves in position before this move first occurred
     strictlyAfter:
-    total:  number of times this position has occurred 
 
-    other: {
-      'e4': {
-        strictlyBefore:
+    pivots: {
+      '1985.??.??': {
+        strictlyBefore: number of times THIS MOVE was made strictly before key date
         strictlyAfter:
-        count:
       }
     }
   ]
 */
-	private analyzeMovesForPosition (pos : PositionInfo) : MoveInfo[] {
+	public analyzeMovesForPosition (pos : PositionInfo) : MoveInfo[] {
 		const self = this;
 	  	const history : {[key:string] : string[]} = pos.getHistory();
 	  	const moves = Object.keys(history); // distinct moves for this position
@@ -155,7 +136,7 @@ export class CalculateMoveStats {
 	  	// moveOccurrences is now an in-date-order list of every move ever made in position
 	  	moveOccurrences.sort(function(a, b){return compareDates(getMoveDate(a), getMoveDate(b));});
 
-
+	  	const knownMoves : string[] = [];
 	  	const moveHistories : {[key:string]:MoveInfo} = {}; // {'nf3' : <MoveInfo>}
 
 	  	// moveOccurences: [['nf3', gameId], ['Qc1', gameId] ... ]
@@ -170,6 +151,7 @@ export class CalculateMoveStats {
 	    		moveHistory = moveHistories[move];
 	    	} else {
 	    		// this is the first time we're seeing this move
+	    		knownMoves.push(move);
 
 	    		// create a date pivot for every previously encountered move
 	    		// IMPORTANT: these values have to be adjusted below for ambiguous dates.
@@ -218,6 +200,7 @@ export class CalculateMoveStats {
 					    		gameInfo.get("id"),
 					    		idx - ambiguousDateCountBefore,
 					    		moveOccurrences.length - idx - 1 - ambiguousDateCountAfter,
+					    		knownMoves,
 					    		pos.getFen(), 
 					    		pos.getId());
 	    	}
@@ -241,6 +224,31 @@ export class CalculateMoveStats {
 	} // analyzeMovesForPosition
  
 
+	public filterMoves(moveHistories : MoveInfo[]) : MoveInfo[] {
+
+		const hash : {[key:string]: MoveInfo} = {};
+
+		const filtered = moveHistories.filter(function(moveInfo : MoveInfo) {
+			hash[moveInfo.getMove()] = moveInfo;
+			if (moveInfo.getTotal() < 10 || moveInfo.getStrictlyBefore() < 10 || moveInfo.getStrictlyAfter() < 10) {
+				return false;
+			}
+			return true;
+		})
+
+		filtered.forEach(function(moveInfo:MoveInfo) {
+			const otherFreq : {[key:string]: {strictlyBefore:number, strictlyAfter:number}} = {};
+			const date = moveInfo.getDate();
+			moveInfo.getKnownMoves().forEach(function(move:string) {
+				moveInfo.setBeforeForMove(move, hash[move].getPivotBefore(date));
+				moveInfo.setAfterForMove(move, hash[move].getPivotAfter(date));
+			})
+		})
+
+		return filtered;
+	}
+
+
 } // Class CalculateMoveStats
 
 
@@ -248,31 +256,50 @@ export class MoveInfo {
 	private total : number = 0;
 	private strictlyBefore : number = 0; // number of times ANY move occurred strictly before firstPlayed
 	private strictlyAfter : number = 0;  // ditto above for after.
+	private knownMoves : string[]; // other moves known at the time this move was invented
 	private firstPlayed : string = ""; // date move was first played
 	private gameId : string = ""; // gameId of first appearance
-	private byDate : {[key:string]: {
+	private pivots : {[key:string]: {
 		strictlyBefore : number, 		// number of times THIS MOVE was played strictly before date key
 		strictlyAfter : number}} = {};
+	// how the counts of the other lines changes after this move came around:
+	private otherLines : {[key:string]: {strictlyBefore:number, strictlyAfter:number}} = {}; // before and after refer to the date this move was invented
 	private move : string;
 	private fen : string;
 	private posId : string;
 
-	public constructor(move : string, dateFirstPlayed : string, gameId:string, before:number, after:number, fen:string="", posId:string="") {
+	public constructor(move : string, dateFirstPlayed : string, gameId:string, before:number, after:number, 
+						knownMoves : string[], fen:string="", posId:string="") {
 		this.move = move;
 		this.firstPlayed = dateFirstPlayed;
 		this.gameId = gameId;
 		this.strictlyBefore = before;
 		this.strictlyAfter = after;
+		this.knownMoves = knownMoves;
 		this.fen = fen;
 		this.posId = posId;
+	}
+
+	public getKnownMoves() : string[] {
+		return this.knownMoves;
+	}
+
+	public setBeforeForMove(move:string, count:number):void {
+		this.otherLines[move] = this.otherLines[move] ?? {};
+		this.otherLines[move].strictlyBefore = count;
+	}
+
+	public setAfterForMove(move:string, count:number):void {
+		this.otherLines[move] = this.otherLines[move] ?? {};
+		this.otherLines[move].strictlyAfter = count;
 	}
 
 	public addOccurrance() : void {
 		const self = this;
 		self.total ++;
 		// update the pivots
-		Object.keys(self.byDate).forEach(function(date:string) {
-			self.byDate[date].strictlyAfter ++;
+		Object.keys(self.pivots).forEach(function(date:string) {
+			self.pivots[date].strictlyAfter ++;
 		})
 	}
 
@@ -284,23 +311,27 @@ export class MoveInfo {
 		return this.move;
 	}
 
+	public getDate() : string {
+		return this.firstPlayed;
+	}
+
 	public addDatePivot(date : string) : void {
-		this.byDate[date] = {
+		this.pivots[date] = {
 			strictlyBefore: this.total,
 			strictlyAfter: 0
 		};
 	}
 
 	public decrementBeforeForDate(date: string) : void {
-		this.byDate[date].strictlyBefore --;
+		this.pivots[date].strictlyBefore --;
 	}
 
 	public decrementAfterForDate(date: string) : void {
-		this.byDate[date].strictlyAfter --;
+		this.pivots[date].strictlyAfter --;
 	}
 
 	public getBeforeCount(date : string) : number {
-		return this.byDate[date] ? this.byDate[date].strictlyBefore : 0;
+		return this.pivots[date] ? this.pivots[date].strictlyBefore : 0;
 	}
 
 	public getStrictlyBefore():number {
@@ -312,23 +343,23 @@ export class MoveInfo {
 	}
 
 	public getPivots():string[] {
-		return Object.keys(this.byDate);
+		return Object.keys(this.pivots);
 	}
 
 	public getPivotBefore(date:string):number{
-		return this.byDate[date].strictlyBefore;
+		return this.pivots[date].strictlyBefore;
 	}
 
 	public getPivotAfter(date:string):number{
-		return this.byDate[date].strictlyAfter;
+		return this.pivots[date].strictlyAfter;
 	}
 
 	public sanityCheck() : void {
 		const self = this;
 		let count = 0;
-		Object.keys(self.byDate).forEach(function(date:string) {
-			if ((self.byDate[date].strictlyBefore + self.byDate[date].strictlyAfter) > self.total) {
-				throw new Error("Move counts don't add up for " + JSON.stringify(self.byDate[date]) + "   total = " + self.total);	
+		Object.keys(self.pivots).forEach(function(date:string) {
+			if ((self.pivots[date].strictlyBefore + self.pivots[date].strictlyAfter) > self.total) {
+				throw new Error("Move counts don't add up for " + JSON.stringify(self.pivots[date]) + "   total = " + self.total);	
 			}
 		})
 	}
@@ -355,7 +386,7 @@ class GameInfo {
 	}
 }
 
-class PositionInfo {
+export class PositionInfo {
 	private fen : string;
 	private id : string;
 	private history : {[key:string] : string[]}; // {'nf3' : [gameid, gameid ...], 'e4':[], ...}
@@ -398,6 +429,43 @@ class PositionInfo {
 }
 
 
-const moveFinder = new CalculateMoveStats("./test");
-const moves = moveFinder.getStats();
-//console.log(JSON.stringify(moves, null, " "));
+//===================================================================================================================================================
+
+
+
+
+
+function runScript(dirpath:string) : MoveInfo[] {
+	let file;
+  	let count = 0;
+  	let ret : MoveInfo[] = [];
+
+  	const moveFinder = new CalculateMoveStats(dirpath);
+  	const fileGenerator = moveFinder.enumerateFiles(path.join(dirpath, "positions"));
+  	console.log("analyzing positions");
+	  
+	while ((file = fileGenerator.next().value) !== undefined) {
+	    count++;
+	    const posId = path.basename(path.dirname(file)) + path.basename(file);
+	    console.log("Analyzing position id " + posId);
+	    const position = PositionInfo.fromString(moveFinder.loadFile(file), posId);
+	    const moves = moveFinder.analyzeMovesForPosition(position);
+	    const novelties = moveFinder.filterMoves(moves);
+	    if (novelties.length) {
+	    	console.log(JSON.stringify(novelties, null, ""));
+	    }
+	    ret = ret.concat(novelties);
+
+	    if (count % 1 == 0) {
+	    	console.log("Analyzed " + count + " positions, found " + ret.length + " interesting moves so far");
+	    }
+	}
+
+	return ret;
+}
+
+
+
+console.log("starting");
+const moves = runScript("./test");
+console.log(JSON.stringify(moves, null, " "));

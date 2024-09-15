@@ -1,4 +1,5 @@
-import { CalculateMoveStats, MoveInfo } from './CalculateMoveStats';
+import { CalculateMoveStats, MoveInfo, PositionInfo } from './CalculateMoveStats';
+import * as path from 'path';
 
 describe('Basic', () => {
 
@@ -6,7 +7,11 @@ describe('Basic', () => {
 
     it('should process a position', () => {
         const moveFinder = new CalculateMoveStats("./test");
-        const moves = moveFinder.getStats();
+        const fileGenerator = moveFinder.enumerateFiles(path.join("./test", "positions"));
+        const file = fileGenerator.next().value;
+        const posId = path.basename(path.dirname(file)) + path.basename(file);
+        const position = PositionInfo.fromString(moveFinder.loadFile(file), posId);
+        const moves = moveFinder.analyzeMovesForPosition(position);
         
         
         moves.forEach(function(move:MoveInfo) {
