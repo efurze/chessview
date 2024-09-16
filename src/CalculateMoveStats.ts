@@ -195,6 +195,7 @@ export class CalculateMoveStats {
 					    		gameInfo.get("id"),
 					    		idx - ambiguousDateCountBefore,
 					    		moveOccurrences.length - idx - 1 - ambiguousDateCountAfter,
+					    		occurrances,
 					    		JSON.parse(JSON.stringify(knownMoves)),
 					    		gameInfo.get("White"),
 					    		gameInfo.get("Black"),
@@ -253,6 +254,7 @@ export class CalculateMoveStats {
 
 export class MoveInfo {
 	private total : number = 0;
+	private positionTotal : number;
 	private strictlyBefore : number = 0; // number of times ANY move occurred strictly before firstPlayed
 	private strictlyAfter : number = 0;  // ditto above for after.
 	private knownMoves : string[]; // other moves known at the time this move was invented
@@ -269,11 +271,12 @@ export class MoveInfo {
 	private fen : string;
 	private posId : string;
 
-	public constructor(move : string, dateFirstPlayed : string, gameId:string, before:number, after:number, 
+	public constructor(move : string, dateFirstPlayed : string, gameId:string, before:number, after:number, positionTotal:number,
 						knownMoves : string[], white:string, black:string, fen:string="", posId:string="") {
 		this.move = move;
 		this.firstPlayed = dateFirstPlayed;
 		this.gameId = gameId;
+		this.positionTotal = positionTotal;
 		this.strictlyBefore = before;
 		this.strictlyAfter = after;
 		this.knownMoves = knownMoves;
@@ -283,19 +286,21 @@ export class MoveInfo {
 		this.posId = posId;
 	}
 
-	public toString() : string {
-		return `{
-			fen: ${this.fen},
-			move: ${this.move},
-			date: ${this.firstPlayed},
-			white: ${this.white},
-			black: ${this.black},
-			gameId: ${this.gameId},
-			before: ${this.strictlyBefore},
-			after: ${this.strictlyAfter},
-			posId: ${this.posId},
-			otherMoves: ${JSON.stringify(this.otherLines)}
-		}`.replace(/\t/g, "").replace(/\n/g, "").replace(/\"/g, "");
+	public toObj() : unknown {
+		return {
+			fen: this.fen,
+			move: this.move,
+			date: this.firstPlayed,
+			white: this.white,
+			black: this.black,
+			gameId: this.gameId,
+			count: this.total,
+			positionCount: this.positionTotal,
+			before: this.strictlyBefore,
+			after: this.strictlyAfter,
+			posId: this.posId,
+			otherMoves: this.otherLines
+		};
 	}
 
 	public getKnownMoves() : string[] {
@@ -493,6 +498,6 @@ if (process.argv[1].endsWith("CalculateMoveStats.js")) { // we don't want to run
 	    process.exit(1);
 	}
 
-	const moves = runScript(args[0], args[1]).map(function(move:MoveInfo){return move.toString();});
+	const moves = runScript(args[0], args[1]).map(function(move:MoveInfo){return move.toObj();});
 	console.log(JSON.stringify(moves, null, " "));
 }
