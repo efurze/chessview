@@ -9,32 +9,70 @@ function filterSignificance(move, sig) {
     return false;
   }
 
-  const postFreq = move.count/move.after;
-  if (postFreq < 0.10) {
-    return false;
-  }
-
-    return true;
+  return true;
 }
 
+function filterFisher(move) {
+  const fisher = fisherExactTest(0, move.count, move.before, move.after - move.count,  'left');
+  return fisher > -Math.log(0.01); // reject at p > 0.01
+}
+
+
+
+
+const data = fs.readFileSync('all_potential_novelties.json');
+const moves = JSON.parse(data);
+
+const moves100 = moves.filter(function(m){return filterSignificance(m, 0.01);});
+                        //.filter(function(m){return !filterFisher(m);});
+//const movesFisher100 = moves.filter(filterFisher);
+
+console.log("p<0.01 moves: " + moves100.length);
+//console.log("p<0.01 moves (fisher): " + movesFisher100.length);
+
+
+
+for (let i=0; i < 10; i++) {
+  const move = moves100[i];
+  const freq = move.count/move.positionCount;
+  const fisher = fisherExactTest(0, move.count, move.before, move.after - move.count,  'left');
+  console.log(`before: ${move.before} \t\t after: ${move.after} \t\t count: ${move.count} \t\t \
+    ln(p-value): ${Math.round(-100*move.before * Math.log(1-freq))/100} \t\t ln(fisher): ${fisher}`);
+
+
+  Object.keys(move.otherMoves).forEach(function(otherMove) {
+    const other = move.otherMoves[otherMove];
+    const fisher = fisherExactTest(other.before, other.after, move.before - other.before, move.after - other.after, 'left');
+    console.log(`  ${otherMove} \t\t\t before: ${other.before} \t\t after: ${other.after} \t\t fisher: ${fisher}`);
+  })
+  console.log("");
+
+}
+
+
+
+
+
 function factorial(n) {
-    if (n === 0 || n === 1) return 1;
-    let result = 1;
+    if (n === 0 || n === 1) return 0;
+    let result = 0;
     for (let i = 2; i <= n; i++) {
-        result *= i;
+        result += Math.log(i);
     }
     return result;
 }
 
 function hypergeometric(a, b, c, d) {
-    return (factorial(a + b) * factorial(c + d) * factorial(a + c) * factorial(b + d)) /
-           (factorial(a) * factorial(b) * factorial(c) * factorial(d) * factorial(a + b + c + d));
+    return -1 * (factorial(a + b) + factorial(c + d) + factorial(a + c) + factorial(b + d)
+           - factorial(a) - factorial(b) - factorial(c) - factorial(d) - factorial(a + b + c + d));
 }
 /*
   a: successes group A
   b: successes group B
   c: failures group A
   d: failures group B
+
+  returns ln of the actual probability to avoid underflow
 */
 function fisherExactTest(a,b,c,d, tail = 'two') {
 
@@ -85,23 +123,3 @@ function fisherExactTest(a,b,c,d, tail = 'two') {
 }
 
 
-
-const data = fs.readFileSync('all_potential_novelties.json');
-const moves = JSON.parse(data);
-
-const moves100 = moves.filter(function(m){return filterSignificance(m, 0.1);});
-
-console.log("p<0.01 moves: " + moves100.length);
-
-for (let i=0; i < 10; i++) {
-  const m = moves100[i];
-  const freq = m.count/m.positionCount;
-  const fisher = fisherExactTest(0, m.count, m.before, m.after - m.count,  'left');
-  console.log(`before: ${m.before} \t\t after: ${m.after} \t\t count: ${m.count} \t\t \
-    log2(p-value): ${Math.round(-100*m.before * Math.log2(1-freq))/100} \t\t fisher: ${((fisher))}`);
-  Object.keys(m.otherMoves).forEach(function(other) {
-    const fisher = fisherExactTest(m.before - other.before, m.before - other.before, other.before, other.before, 'left');
-    console.log(`  ${other} \t\t\t before: ${m.otherMoves[other].before} \t\t after: ${m.otherMoves[other].after} \t\t fisher: ${fisher}`);
-  })
-  console.log("");
-}
