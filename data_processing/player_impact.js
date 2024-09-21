@@ -29,52 +29,78 @@ let saveObject = function(obj, filename) {
 
 
 let runScript = function() {
-  const args = process.argv.slice(2); // first 2 args are node and this file
-  if (args.length < 2) {
-    console.error("Not enough parameters. USAGE: node player_impact.js filtered_novelties.json player_stats.json");
-    process.exit(1);
-  }
 
-  const inputfile = args[0];
-  const outfile = args[1];
+  const inputfile = "./novelties_fisher100.json";
   
   const novelties = initializeJSON(inputfile);
-  const players = {};
+  const playersNumber = {}, playersGames = {}, playersPercentages = {};
+  const playersDifficulty = {};
 
   novelties.forEach(function(novelty, count) {
-    const player = novelty.player;
 
-    // TODO: combine all variants of players' names
-
-    const info = players[player] ?? {
-        novelty_count: 0,   // number of novel moves contributed
-        games_affected: 0,  // number of games in which one of this players' novelties has been played
-        impact: 0           // sum of (before * count) for each novelty
-    };
-    
-    info.novelty_count ++;
-    info.games_affected += novelty.count;
-    info.impact += (novelty.before + novelty.after) * (novelty.count/novelty.after);
-
-    players[player] = info;
-
-    if (count % 100 == 0){
-      console.log("novelty " + count);
+    if (novelty.count > 5000 && novelty.before < 100) {
+      return;
     }
+
+    const turn = novelty.fen.match(/ [b|w] /)[0].trim();
+    const player = turn === 'b' ? novelty.black : novelty.white;
+    
+    // normalize the name:
+    const parts = player.split(',');
+    parts[1] = parts[1] ?? " ";
+    const name = parts[0] + ", " + parts[1].charAt(1);
+
+    playersNumber[name] = playersNumber[name] ?? 0;
+    playersNumber[name] ++;
+
+    playersGames[name] = playersGames[name] ?? 0;
+    playersGames[name] += novelty.count;
+
+    playersPercentages[name] = playersPercentages[name] ?? 0;
+    playersPercentages[name] += novelty.count/novelty.after;
+
+    playersDifficulty[name] = playersDifficulty[name] ?? 0;
+    playersDifficulty[name] += novelty.before;
+    
   })
 
-  console.log("Saving");
-  const names = Object.keys(players);
-  names.sort(function(a,b) {
-    return players[b].impact - players[a].impact;
-  });
-
-  const outarray = [];
-  names.forEach(function(name) {
-    outarray.push([name, players[name]]);
+  const players = Object.keys(playersNumber);
+  players.sort(function(a,b){
+    return playersNumber[b] - playersNumber[a];
   })
+  saveData("player_novelty_count.json", players, playersNumber);
 
-  saveObject(outarray, outfile);
+
+  players.sort(function(a,b){
+    return playersGames[b] - playersGames[a];
+  })
+  let out = ["["];
+  players.forEach(function(name) {
+    out.push(`{"player": "${name}", "gamesImpacted": ${playersGames[name]}, "playerNoveltyCount": ${playersNumber[name]}},`);
+  })
+  out.push("]");
+  fs.writeFileSync("player_novelty_games.json", out.join('\n'));
+
+
+  players.sort(function(a,b){
+    return playersPercentages[b] - playersPercentages[a];
+  })
+  saveData("player_novelty_percentages.json", players, playersPercentages);
+
+  players.sort(function(a,b){
+    return playersDifficulty[b] - playersDifficulty[a];
+  })
+  saveData("player_novelty_difficulty.json", players, playersDifficulty);
+}
+
+function saveData(filename, players, data) {
+  let out = ["["];
+  players.forEach(function(name) {
+    out.push(`{"player": "${name}", "count": ${data[name]}},`);
+  })
+  out.push("]");
+  fs.writeFileSync(filename, out.join('\n'));
+
 }
 
 runScript();

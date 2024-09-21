@@ -63,15 +63,15 @@ let runScript = function() {
     const novelty = initializeJSON(file);
 
     const total = novelty.before + novelty.after;
-
+/*
     if (novelty.before < (total * 0.2) || novelty.after < (total * 0.2) || novelty.count < 5) {
       continue;
     }
-
-    const freq = novelty.count/(novelty.before + novelty.after);
+*/
+    //const freq = novelty.count/(novelty.before + novelty.after);
     const turn = novelty.fen.match(/ [b|w] /)[0].trim();
     const player = (turn == 'b') ? novelty.black : novelty.white;
-    const likelihood = Math.pow(1-freq, novelty.before);
+    //const likelihood = Math.pow(1-freq, novelty.before);
 
     const info = {
       player: player,

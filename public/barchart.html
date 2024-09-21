@@ -40,57 +40,46 @@ var svg = d3.select("#my_dataviz")
 function renderData(data) {
 
   function xVal(d) {
-    return d.before;
+    return d[0];
   }
 
   function yVal(d) {
-    return (d.count);
+    return d[1];
   }
 
   let bins = {};
   data.forEach(function(d) {
-    if (d.count == 0) {
-      return;
-    }
-    const freq = d.count/(d.after);
-    if (freq == 0 || freq == 1) {
-      return;
-    }
-    
-    const logOdds = Math.round(-10*(d.before+1) * Math.log2(1-freq))/10;
-    bins[logOdds] = (bins[logOdds] ?? 0) + 1;
 
+    const before = d.before - d.before % 2;
 
-    // figure out the odds, given the overall freq, that <before> games occurred before observation.
-    // Now figure out how many <before> games would give the same odds for a freq of 1/2
-    // use THAT figure for <before> in the histogram
-    /*
-    const scaledBefore = Math.round(d.before * Math.log2(freq)/Math.log2(0.5));
-    console.log(d.before + "(" + freq +  ") => " + scaledBefore);
-    const before = scaledBefore;// - (d.before % 2);
     bins[before] = (bins[before] ?? 0) + 1;
-    */
+
   })
 
-  data = [];
-  Object.keys(bins).forEach(function(key) {
-    const point = {before: key,
-                  count: bins[key]};
 
-  	data.push(point);
+
+  const histogram = [];
+  Object.keys(bins).forEach(function(key) {
+    const bar = [key, bins[key]];
+
+  	histogram.push(bar);
   })
 
   // scale the axes
   let xMax = 0, yMax = 0;
-  data.forEach(function(d) {
+  histogram.forEach(function(d) {
     xMax = Math.max(xMax, xVal(d));
     yMax = Math.max(yMax, yVal(d));
   })
 
+  console.log(histogram);
+
+  xMax = 1000;
+
   // X axis
   var x = d3.scaleLinear()
     .range([ 0, width ])
-    .domain([0, 30])
+    .domain([0, xMax])
  
   svg.append("g")
     .attr("transform", "translate(0," + height + ")")
@@ -109,7 +98,7 @@ function renderData(data) {
 
   // Bars
   svg.selectAll("mybar")
-    .data(data)
+    .data(histogram)
     .enter()
     .append("rect")
       .attr("x", function(d) { return x(xVal(d)); })

@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>D3 Charts Layout</title>
+  <style>
+    /* Basic reset and styling */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+    }
+
+    .chart-container {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr); /* Two columns */
+      grid-gap: 20px; /* Spacing between charts */
+      margin: 0 auto;
+    }
+
+    .chart {
+      width: 100%;
+      height: 600px; /* Fixed height for the chart */
+      border: 1px solid #ccc; /* Optional border */
+      background-color: #f9f9f9; /* Placeholder background color */
+    }
+  </style>
+</head>
+<body>
+  
+  <!-- Chart container -->
+  <div class="chart-container">
+    <div id="chart1" class="chart"></div>
+    <div id="chart2" class="chart"></div>
+    <div id="chart3" class="chart"></div>
+    <div id="chart4" class="chart"></div>
+    <div id="chart5" class="chart"></div>
+    <div id="chart6" class="chart"></div>
+  </div>
+
+  <!-- D3.js library -->
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+
+  <!-- Add your D3 chart scripts here -->
+  <script>
+    // Define margin, width, and height
+  // Select the container and get its width and height dynamically
+var container = document.getElementById('chart1');
+var margin = {top: 20, right: 30, bottom: 40, left: 40};
+
+// Get the current width and height of the container
+var width = container.clientWidth - margin.left - margin.right;
+var height = container.clientHeight - margin.top - margin.bottom; // Now height is dynamic
+
+  const url = new URL(window.location.href);
+  const file = url.searchParams.get('file');
+  document.title = file;
+
+  fetch('/data/' + file)
+    .then(function(res){
+      return res.json();
+    }).then(function(data){
+      setupCharts(data);
+    }).catch(function(error) {
+      console.log(error);
+    });
+
+  function setupCharts(data) {
+    drawBeforeHistogram(data, "#chart1");
+    drawCountHistogram(data, "#chart2");
+    drawMovePopularityHistogram(data, "#chart3");
+  }
+
+function drawCountHistogram(data, container) {
+    // Append the svg object to the body of the page with a viewBox for responsiveness
+  var svg = d3.select(container)
+    .append("svg")
+      .attr("viewBox", `0 0 ${width + margin.left + margin.right} ${height + margin.top + margin.bottom}`)
+      .attr("preserveAspectRatio", "xMinYMin meet") // This maintains aspect ratio
+    .append("g")
+      .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+    function xVal(d) {
+      return d[0];
+    }
+
+    function yVal(d) {
+      return d[1];
+    }
+
+    let bins = {};
+    data.forEach(function(d) {
+
+      const count = d.count - d.count % 2;
+
+      bins[count] = (bins[count] ?? 0) + 1;
+
+    })
+  
+
+  const histogram = [];
+  Object.keys(bins).forEach(function(key) {
+    const bar = [key, bins[key]];
+
+    histogram.push(bar);
+  })
+
+  // scale the axes
+  let xMax = 0, yMax = 0;
+  histogram.forEach(function(d) {
+    xMax = Math.max(xMax, xVal(d));
+    yMax = Math.max(yMax, yVal(d));
+  })
+
+  xMax = 100;
+
+  // Define the X and Y scales based on dynamic width and height
+  var x = d3.scaleBand()
+    .domain(histogram.map(xVal).slice(0, xMax)) // Map the x values
+    .range([0, width]) // Ensure the scale uses dynamic width
+    .padding(0.1);
+
+
+  // Add the X axis
+
+    var xAxis = d3.axisBottom(x)
+    .tickValues(x.domain().filter(function(d, i) {
+        return !(i % 20);  // Show every 10th label, adjust the modulus value as needed
+    }));
+
+  svg.append("g")
+    .attr("transform", "translate(0," + height + ")")
+    .call(xAxis)
+    .selectAll("text")
+      .attr("transform", "translate(-10,0)rotate(-45)")
+      .style("text-anchor", "end");
+
+  // Add the Y axis
+  var y = d3.scaleLinear()
+    .domain([0, yMax]) // Use the data's maximum value
+    .range([height, 0]);
+
+  svg.append("g")
+    .call(d3.axisLeft(y));
+
+  // title
+  svg.append("text")
+  .attr("x", width / 2)             // Horizontally center the title
+  .attr("y", 10)        // Adjust the vertical position (above the chart)
+  .attr("text-anchor", "middle")     // Center the text relative to the x position
+  .style("font-size", "16px")        // Set the font size
+  .style("font-weight", "bold")      // Make the title bold
+  .text("Move Count Histogram");        // Set the title text
+
+  // Add bars
+  svg.selectAll("mybar")
+    .data(histogram)
+    .enter()
+    .append("rect")
+      .attr("x", function(d) { return x(xVal(d)); })
+      .attr("y", function(d) { return y(yVal(d)); })
+      .attr("width", x.bandwidth()) // Set the width based on scale
+      .attr("height", function(d) { return height - y(yVal(d)); })
+      .attr("fill", "#69b3a2");
+}
+
+
+  function drawBeforeHistogram(data, container) {
+    // Append the svg object to the body of the page with a viewBox for responsiveness
+  var svg = d3.select(container)
+    .append("svg")
+      .attr("viewBox", `0 0 ${width + margin.left + margin.right} ${height + margin.top + margin.bottom}`)
+      .attr("preserveAspectRatio", "xMinYMin meet") // This maintains aspect ratio
+    .append("g")
+      .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+    function xVal(d) {
+      return d[0];
+    }
+
+    function yVal(d) {
+      return d[1];
+    }
+
+    let bins = {};
+    data.forEach(function(d) {
+
+      const before = d.before - d.before % 2;
+
+      bins[before] = (bins[before] ?? 0) + 1;
+
+    })
+  
+
+  const histogram = [];
+  Object.keys(bins).forEach(function(key) {
+    const bar = [key, bins[key]];
+
+    histogram.push(bar);
+  })
+
+  // scale the axes
+  let xMax = 0, yMax = 0;
+  histogram.forEach(function(d) {
+    xMax = Math.max(xMax, xVal(d));
+    yMax = Math.max(yMax, yVal(d));
+  })
+
+  xMax = 300;
+
+  // Define the X and Y scales based on dynamic width and height
+  var x = d3.scaleBand()
+    .domain(histogram.map(xVal).slice(0, 100)) // Map the x values
+    .range([0, width]) // Ensure the scale uses dynamic width
+    .padding(0.1);
+
+
+  // Add the X axis
+
+    var xAxis = d3.axisBottom(x)
+    .tickValues(x.domain().filter(function(d, i) {
+        return !(i % 20);  // Show every 10th label, adjust the modulus value as needed
+    }));
+
+  svg.append("g")
+    .attr("transform", "translate(0," + height + ")")
+    .call(xAxis)
+    .selectAll("text")
+      .attr("transform", "translate(-10,0)rotate(-45)")
+      .style("text-anchor", "end");
+
+  // Add the Y axis
+  var y = d3.scaleLinear()
+    .domain([0, yMax]) // Use the data's maximum value
+    .range([height, 0]);
+
+  svg.append("g")
+    .call(d3.axisLeft(y));
+
+
+  // title
+  svg.append("text")
+  .attr("x", width / 2)             // Horizontally center the title
+  .attr("y", 10)        // Adjust the vertical position (above the chart)
+  .attr("text-anchor", "middle")     // Center the text relative to the x position
+  .style("font-size", "16px")        // Set the font size
+  .style("font-weight", "bold")      // Make the title bold
+  .text("Position Occurrences Before Move");        // Set the title text
+
+  // Add bars
+  svg.selectAll("mybar")
+    .data(histogram)
+    .enter()
+    .append("rect")
+      .attr("x", function(d) { return x(xVal(d)); })
+      .attr("y", function(d) { return y(yVal(d)); })
+      .attr("width", x.bandwidth()) // Set the width based on scale
+      .attr("height", function(d) { return height - y(yVal(d)); })
+      .attr("fill", "#69b3a2");
+}
+
+function drawMovePopularityHistogram(data, container) {
+    // Append the svg object to the body of the page with a viewBox for responsiveness
+  var svg = d3.select(container)
+    .append("svg")
+      .attr("viewBox", `0 0 ${width + margin.left + margin.right} ${height + margin.top + margin.bottom}`)
+      .attr("preserveAspectRatio", "xMinYMin meet") // This maintains aspect ratio
+    .append("g")
+      .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+    function xVal(d) {
+      return d[0];
+    }
+
+    function yVal(d) {
+      return d[1];
+    }
+
+    let bins = {};
+    data.forEach(function(d) {
+
+      const precentage = Math.round(100*d.count/d.after);
+
+      bins[precentage] = (bins[precentage] ?? 0) + 1;
+
+    })
+  
+
+  const histogram = [];
+  Object.keys(bins).forEach(function(key) {
+    const bar = [key, bins[key]];
+
+    histogram.push(bar);
+  })
+
+  // scale the axes
+  let xMax = 0, yMax = 0;
+  histogram.forEach(function(d) {
+    xMax = Math.max(xMax, xVal(d));
+    yMax = Math.max(yMax, yVal(d));
+  })
+
+  xMax = 300;
+
+  // Define the X and Y scales based on dynamic width and height
+  var x = d3.scaleBand()
+    .domain(histogram.map(xVal).slice(0, 100)) // Map the x values
+    .range([0, width]) // Ensure the scale uses dynamic width
+    .padding(0.1);
+
+
+  // Add the X axis
+
+    var xAxis = d3.axisBottom(x)
+    .tickValues(x.domain().filter(function(d, i) {
+        return !(i % 20);  // Show every 10th label, adjust the modulus value as needed
+    }));
+
+  svg.append("g")
+    .attr("transform", "translate(0," + height + ")")
+    .call(xAxis)
+    .selectAll("text")
+      .attr("transform", "translate(-10,0)rotate(-45)")
+      .style("text-anchor", "end");
+
+  // Add the Y axis
+  var y = d3.scaleLinear()
+    .domain([0, yMax]) // Use the data's maximum value
+    .range([height, 0]);
+
+  svg.append("g")
+    .call(d3.axisLeft(y));
+
+
+  // title
+  svg.append("text")
+  .attr("x", width / 2)             // Horizontally center the title
+  .attr("y", 10)        // Adjust the vertical position (above the chart)
+  .attr("text-anchor", "middle")     // Center the text relative to the x position
+  .style("font-size", "16px")        // Set the font size
+  .style("font-weight", "bold")      // Make the title bold
+  .text("Move Pecentage");        // Set the title text
+
+  // Add bars
+  svg.selectAll("mybar")
+    .data(histogram)
+    .enter()
+    .append("rect")
+      .attr("x", function(d) { return x(xVal(d)); })
+      .attr("y", function(d) { return y(yVal(d)); })
+      .attr("width", x.bandwidth()) // Set the width based on scale
+      .attr("height", function(d) { return height - y(yVal(d)); })
+      .attr("fill", "#69b3a2");
+}
+
+    // Add more D3 chart code for chart2, chart3, etc.
+  </script>
+</body>
+</html>

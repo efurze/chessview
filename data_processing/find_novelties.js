@@ -34,6 +34,8 @@ let initializeOutputDirectory = function(outputdir) {
   }
 }
 
+
+
 /*
   pos: {
     fen: <fenstr>,
@@ -46,7 +48,7 @@ let initializeOutputDirectory = function(outputdir) {
     }
   }
 */
-let processPosition = function(pos) {
+let processPositionOld = function(pos) {
   if (!pos || !pos.moves) {
     return;
   }
@@ -58,11 +60,6 @@ let processPosition = function(pos) {
   moves.forEach(function(move) {
     occurrances += pos.moves[move].length;
   });
-
-  // only consider positions that have occured at least 100 times
-//  if (occurrances < 100){
-  //  return;
-  //}
 
 
   const gamesBefore = {}; // {'1960.??.??': 0} 
@@ -110,8 +107,7 @@ let processPosition = function(pos) {
     // The higher this number is, the less likely this is a true novelty
     logLikelihood = -1 * before * Math.log2(1 - moveFreq);
 
-    const significance = Math.log2(Math.pow(moveFreq, noveltyCount) * binomial(after, noveltyCount));
-
+  
     novelties.push({
       fen: pos.fen,
       move: move,
@@ -136,22 +132,7 @@ let processPosition = function(pos) {
   return novelties;
 }
 
-function binomial(n, k) {
-  if (k < 0 || k > n) {
-    return 0;
-  }
-  if (k === 0 || k === n) {
-    return 1;
-  }
 
-  let result = 1;
-  for (let i = 1; i <= k; i++) {
-    result *= n - k + i;
-    result /= i;
-  }
-
-  return result;
-}
 
 let merge = function(a, b) {
   let ret = [];
@@ -170,10 +151,15 @@ let merge = function(a, b) {
 }
 
 let compareGameDates = function(a, b) {
-  const datea = a['Date'].replace(/\?\?/g, "01").replace(/\./g, "");
-  const dateb = b['Date'].replace(/\?\?/g, "01").replace(/\./g, "");
+  return compareDates(a['Date'], b['Date']);
+}
+
+let compareDates = function(a, b) {
+  const datea = a.replace(/\?\?/g, "01").replace(/\./g, "");
+  const dateb = b.replace(/\?\?/g, "01").replace(/\./g, "");
   return datea - dateb;
 }
+
 
 /*
 returns:
@@ -226,12 +212,37 @@ function saveNovelties(novelties, dir) {
   })
 }
 
+
+// number of distinct moves divided by total position occurrance.
+function noveltyRate(pos) {
+  if (!pos || !pos.moves) {
+    return {
+      uniqueMoves: 0,
+      positionOccurrance: 0
+    };
+  }
+
+  const moves = Object.keys(pos.moves);
+
+  // total times this position has occurred
+  let occurrances = 0;
+  moves.forEach(function(move) {
+    occurrances += pos.moves[move].length;
+  });
+
+  return {
+    uniqueMoves: moves.length,
+    positionOccurrance: occurrances
+  };
+}
+
+
 let GAMEDIR = "";
 
 let runScript = function() {
   const args = process.argv.slice(2); // first 2 args are node and this file
   if (args.length < 2) {
-    console.error("Not enough parameters. USAGE: node find_novelties.js input/ game/ output.json");
+    console.error("Not enough parameters. USAGE: node find_novelties.js position/ game/ output.json");
     process.exit(1);
   }
 
@@ -242,6 +253,9 @@ let runScript = function() {
 
   let file;
   let count = 0;
+  let totalUniqueMoves = 0, totalMoves = 0;
+
+  
   while ((file = filegenerator.next().value) !== undefined) {
     const novelties = processPosition(initializeJSON(file));
     saveNovelties(novelties, outdir);

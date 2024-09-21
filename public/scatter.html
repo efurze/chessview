@@ -55,21 +55,14 @@ fetch('/data/' + file)
 
 let renderData = function(data) {
 
+
   function xVal(d) {
-    const freq = d.count/(d.before + d.after);
-    return freq;
+    return Math.log2(d.count);
   }
 
   function yVal(d) {
-    if (d.count < 3 || d.after < 3) {
-      return 0;
-    }
-    return d.before;
-
-    const freq = d.count/(d.before + d.after)
-    const logOdds = -(d.before+1) * Math.log2(1-freq);
-    //console.log("logOdds " + logOdds);
-    return logOdds;
+    const freq = d.count/(d.after)
+    return Math.log2(d.before);
   }
 
   // automatically scale the axes
@@ -77,11 +70,23 @@ let renderData = function(data) {
   data.forEach(function(d) {
     maxX = Math.max(maxX, xVal(d));
     maxY = Math.max(maxY, yVal(d));
+
+    const turn = d.fen.match(/ [b|w] /)[0].trim();
+    const player = turn === 'b' ? d.black : d.white;
+    d.player = player;
   })
+
+  function isNovelty(d) {
+    const freq = d.count/(d.before + d.after);
+    const postFreq = d.count/d.after;
+    const logOdds =  -d.before * Math.log2(1 - freq);
+
+    return (logOdds > -Math.log2(0.01));
+  }
 
   // Add X axis
   var x = d3.scaleLinear()
-    .domain([0, 0.30])
+    .domain([0, 16])
     .range([ 0, width ]);
   svg.append("g")
     .attr("transform", "translate(0," + height + ")")
@@ -132,15 +137,15 @@ svg.append('g')
   .append("circle")
     .attr("cx", function (d) { return x(xVal(d)); } )
     .attr("cy", function (d) { return y(yVal(d)); } )
-    .attr("r", function(d){ return d.count/d.after * 50;} )
+    .attr("r", function(d){ return 3;} )
     .style("fill", function(d){
-      return colorScale(simpleClassifier(d));
+      return isNovelty(d) ? 'red' : 'blue';
     })
   .on('mouseover', (d) => {
       tooltip.style('visibility', 'visible')  // Show tooltip
              .style('left', (event.pageX + 10) + 'px')  // Position it next to the mouse
              .style('top', (event.pageY - 20) + 'px')   // Adjust top for better visibility
-             .html("odds novel: " + simpleClassifier(d) + " before: " + d.before + " count: " + d.count + " after: " + d.after);  // Display data in the tooltip
+             .html(d.player + ", before:" + d.before + " count: " + d.count + " after: " + d.after);  // Display data in the tooltip
   })
   .on('mousemove', (event) => {
       // Update tooltip position as the mouse moves

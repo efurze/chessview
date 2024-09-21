@@ -20,6 +20,10 @@ app.get('/bar', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'barchart.html'));
 });
 
+app.get('/movestats', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'movestats.html'));
+});
+
 
 app.use('/data', express.static(__dirname + '/public/data'));
 
